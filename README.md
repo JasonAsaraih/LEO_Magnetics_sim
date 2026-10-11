@@ -1,56 +1,71 @@
 # CubeSat Magnetorquer Lab
 
-Interactive 3D field, torque, and attitude simulator for three orthogonal air-core circular coils mounted on the +X, +Y, and +Z faces of a cube.
+Interactive field and attitude simulation for three orthogonal air-core circular coils mounted on the +X, +Y, and +Z faces of a uniform cube.
 
-## Run
+## Run locally
 
 Python 3.12 is validated. From this checkout:
 
 ```bash
-python -m venv /workspace/leo-magnetics-env/venv
-/workspace/leo-magnetics-env/venv/bin/python -m pip install -r requirements.txt
-/workspace/leo-magnetics-env/venv/bin/python -m streamlit run app.py --server.headless=true --browser.gatherUsageStats=false
+python -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m streamlit run app.py
 ```
 
-Streamlit normally listens on port 8501. Run locally or use your development platform's supported port access to view the UI; cloud onboarding does not provide web previews.
+Streamlit hosts the initial-condition form and equation review. Live simulation runs on your computer in the browser, with no server round trips during playback. **Download standalone player (HTML)** exports a self-contained player using the applied initial conditions. Open that file in a modern browser to run without Streamlit or an Internet connection. If your browser blocks local HTML, serve the containing folder with `python -m http.server 8000` and open the file through that local server. The standalone file uses its exported initial conditions; change them in Streamlit and export again for a new configuration.
 
-## Controls and calculations
-
-- Set cube side length and total mass in the initial-conditions form. Rotational inertia assumes a uniform solid cube: J = ML²/6 on each axis about the center of mass.
-- Set current (including negative/zero) and turns independently for the X, Y, and Z coils.
-- Coil radius is a configurable fraction of cube side length, below half the side. Coils stay centered on three perpendicular faces.
-- Rotate the whole cube with tilt/azimuth or a body +Z normal vector. The vector is normalized; zero vectors are rejected. Body X/Y follow the deterministic orthogonal basis displayed in the calculations tab. At zero tilt and azimuth, body and world axes coincide.
-- Set the external field's world-coordinate x/y/z components in µT.
-- Toggle field lines and field arrows independently. Hiding arrows also hides magnitude dots and the color scale. Arrow size controls actual raw Plotly cone lengths.
-- Net magnetic moment is the vector sum of NIπR² times each coil normal. Torque is m_net × B_external. Angular acceleration is J⁻¹τ. Mass changes inertia/acceleration, not magnetic moment.
-
-The external field vector is teal; net torque is magenta. All moment, torque, and external-field vector lengths scale linearly with magnitude. Coil-colored arrows show individual moments and a gold arrow shows the net moment. All moment vectors share a common scale. Separate scales apply to unlike units: 0.1 A·m², 40 µT, or 4 µN·m each span 60% of the field-view half-width at vector scale 1. Use the vector scale slider to shrink large vectors that extend beyond the view; zero vectors have zero length and a zero label. Coils are orange (X), green (Y), and violet (Z). A current sweep shows net torque versus X-coil current while Y/Z remain fixed. Equations, per-coil and combined vectors, body axes, and CSV export appear in the calculations tab.
-
-## Code and validation
-
-- `physics.py`: UI-independent SI equations; coil geometry including face offsets; Biot–Savart field integration; CubeSat geometry, inertia, and superposition; shared field-line tracing.
-- `visuals.py`: cube, coils, field visualization, and labeled vector rendering.
-- `app.py`: controls and calculation review.
-- `test_physics.py`: analytical field, torque, normal vectors, geometry, superposition, inertia and scaling checks.
+The bundled browser player is committed, so Node is not required to run the app. After editing browser source, use Node 20+:
 
 ```bash
-/workspace/leo-magnetics-env/venv/bin/python -m pytest -q
+npm ci
+npm run build
+npm test
 ```
 
-Fields use 240 segments per circular winding. Field lines integrate dr/ds = B/|B| using midpoint integration in both directions from 12 coil-plane seeds (4 per coil). They trace the combined coil field plus the external field at all times (there is no coil-only display toggle). Traces stop at the display boundary, near energized wires, at a field null, when returning to a seed, or after 360 steps per direction. Seed spacing is illustrative, not flux density. Points within 2 mm of energized ideal wires are omitted.
+This regenerates `web/dist/player.html`. It bundles Three.js and the worker into one HTML file; there are no runtime CDN requests. Three.js is MIT-licensed; see `web/THREE-LICENSE.txt`.
 
-Assumptions: uniform solid cube mass distribution, coincident circular turns, vacuum permeability, and a uniform external field. No core saturation, heating, resistance, damping, feedback controller, or orbital field model. Coils' own fields do not provide net external torque. Magnetorquers cannot produce torque along the external field. This is an instantaneous engineering calculator, not a flight qualification model.
+## Initial conditions and playback
 
+1. Set cube side length, total mass, coil radius, each coil's current/turns, initial orientation, angular velocity, and external field in the sidebar.
+2. Press **Apply initial conditions / Reset**. Form edits alone do not alter the applied model. All coils remain perpendicular; orientation rotates the whole cube. Body +Z normal vectors are normalized; zero is rejected. Angular velocity and external field use world coordinates.
+3. Use **Play**, **Pause**, and **Reset** inside the player. Coil currents stay fixed in the body frame; the external field stays constant in the world frame. Reset returns to the applied initial conditions.
+4. Drag the **Time scale** slider while playing: 10× means 10 simulated seconds per active real second. Simulation time, active real time, angular speed, magnetic moment, and torque update live. Pauses exclude elapsed wall time.
 
-## Time simulation
+Mouse drag rotates the camera, wheel/pinch zooms, and right-drag pans. Camera controls run independently of the physics worker. Field lines and field arrows can be toggled independently; hiding arrows also hides magnitude dots. Arrow size and physical-vector display scale are native sliders and do not trigger Streamlit redraws. Applying initial conditions reloads the player. Refreshing the page does not preserve a trajectory.
 
-1. Configure cube geometry/mass, coil currents/turns, initial orientation, initial angular velocity (world-frame degrees per second), and external magnetic field.
-2. Press **Apply initial conditions / Reset** to load the form and return to t = 0, paused. Editing the form alone does not alter a running simulation.
-3. Press **Play**. The cube rotates under net magnetorquer torque; currents remain constant in the body frame and the external field stays fixed in the world frame. **Pause** freezes playback; **Play** resumes. **Reset to applied initial conditions** restores the last submitted configuration, not unsubmitted form edits.
-4. Set **Time scale** live: 10× advances 10 simulated seconds per active real second. The display shows integrated simulation time, active real time (excluding pauses), time scale, and status. Display controls remain live.
+Coils and their magnetic moment vectors are orange (X), green (Y), and violet (Z). Net magnetic moment is gold, external field is teal, and torque is magenta. Vector lengths scale linearly with magnitude. All moment vectors share a scale; different physical units have separate reference scales: 0.1 A·m², 40 µT, and 4 µN·m each span 60% of the field-view half-width at display scale 1.
 
-`dynamics.py` contains the quaternion attitude state, fourth-order Runge–Kutta integration, and playback clock. With isotropic cube inertia, world angular velocity follows J ω̇ = m_world × B_external. Quaternion orientation is normalized each step, and step size is bounded by angular velocity and torque frequency. Acceleration and torque are recomputed as orientation changes. A live angular-speed history shows the most recent 2,000 samples.
+The calculations tab and metrics above the player describe **initial conditions**. The player shows live quantities and exports the last 2,000 trajectory samples as CSV (time, quaternion, and angular velocity).
 
-Wall time uses a monotonic clock; speed changes settle elapsed time at the old speed first. Frames update approximately every 0.25 s while playing, subject to rendering time. A per-frame integration budget preserves outstanding simulation time; if computation falls behind, the displayed clock reports actual integrated time and a warning shows the pending duration. Reduce time scale if needed. Playback requires an active app session; browser refresh/session loss does not persist the trajectory.
+## Equations and approximations
 
-While playing, field-line visualization uses trilinear interpolation of the calculated 9×9×9 field grid for responsiveness. Paused lines use direct Biot–Savart tracing. Both use the previous 12 seeds, always including the external field. This display approximation never enters the attitude equations. Camera position is retained across frames.
+Each moment is m_i = N_i I_i πR² n_i; net moment is their vector sum. Torque is m_world × B_external. Uniform solid-cube inertia about its center of mass is J = ML²/6 on each axis. Mass affects inertia and angular acceleration, not magnetic moment.
+
+Attitude uses quaternion RK4 integration: q̇ = ½[0,ω_world]⊗q and ω̇ = τ/J. Quaternion length is normalized after each step. Step size is limited by angular speed and torque frequency. The worker integrates toward the scaled monotonic wall-clock target, subject to a per-update work budget. It never advances the displayed time without integrating physics. If extreme parameters or speeds exceed available CPU, a pending-time message suggests lowering the time scale.
+
+The 3D scene renders via WebGL on browser animation frames. Physics runs in a Web Worker; field geometry refreshes at up to 2 Hz, so it may lag slightly behind attitude. Biot–Savart uses 240 segments per energized circular coil, summed with the external field. Display field lines use midpoint integration of a trilinearly interpolated 9×9×9 field grid from **12 seeds (4 per coil)**. Trace spacing is illustrative, not flux density. Near-wire points within 2 mm are excluded. Display interpolation does not enter attitude dynamics.
+
+Assumptions: uniform solid-cube mass distribution, coincident circular turns, vacuum permeability, and uniform external field. No core saturation, heating, resistance, damping, feedback control, or orbital model. Self-fields do not supply net external torque. Magnetorquers cannot produce torque parallel to the external field. This is an engineering exploration model, not a flight qualification model.
+
+## Code and tests
+
+- `physics.py`, `dynamics.py`: Python reference equations and attitude integrator.
+- `web/physics.js`: SI-unit browser equations, RK4, Biot–Savart, grid interpolation, field-line tracing.
+- `web/worker.js`: background physics/field work.
+- `web/player.js`: persistent WebGL scene, camera, sliders, playback clock, CSV export.
+- `app.py`: initial-condition form, player embedding/export, initial calculation review.
+- `visuals.py`: retained Python Plotly reference visualization.
+
+```bash
+.venv/bin/python -m pytest -q
+npm test
+```
+
+Browser equation tests compare a rotated three-coil trajectory and magnetic field against the Python reference fixture. The optional real-browser check requires `playwright` and Chromium (set `CHROMIUM_PATH` if needed):
+
+```bash
+.venv/bin/python -m pip install playwright
+.venv/bin/python web/check_browser.py http://127.0.0.1:8501
+```
+
+It verifies the native time slider, 10× elapsed time, camera movement during playback, display toggles, pause, and reset in the actual player iframe.

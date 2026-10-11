@@ -1,10 +1,10 @@
-import time
+import json
+from pathlib import Path
+import streamlit.components.v1 as components
 import numpy as np
-import plotly.graph_objects as go
 import streamlit as st
 from physics import Coil, CubeSat, torque
-from dynamics import Simulation, PlaybackClock
-from visuals import scene
+from dynamics import Simulation, quaternion
 
 st.set_page_config(page_title='CubeSat Magnetorquer Lab', layout='wide')
 st.title('CubeSat Magnetorquer Lab')
@@ -13,8 +13,6 @@ st.caption('Set initial conditions, then play the magnetorquer attitude simulati
 
 def load_initial(cube, field, omega):
     st.session_state.simulation = Simulation(cube, field, omega)
-    st.session_state.clock = PlaybackClock(speed=st.session_state.get('time_scale', 1.0))
-    st.session_state.history = [(0.0, float(np.rad2deg(np.linalg.norm(omega))))]
 
 
 if 'simulation' not in st.session_state:
@@ -60,67 +58,35 @@ with st.sidebar:
             load_initial(cube, field, np.deg2rad(initial_rates))
         except ValueError as error:
             st.error(str(error))
-    st.header('Playback')
-    time_scale = st.slider('Time scale (sim seconds / real second)', 0.1, 100.0, 1.0, 0.1, key='time_scale')
-    st.session_state.clock.set_speed(time_scale, time.monotonic())
-    st.header('Display')
-    show_lines = st.checkbox('Show connected field lines', value=True)
-    show_arrows = st.checkbox('Show field arrows', value=True, help='Shows or hides both field arrows and colored magnitude dots.')
-    arrow_scale = st.slider('Field arrow size', 0.05, 2.0, 0.35, 0.05)
-    vector_scale = st.slider('Moment / torque / external vector scale', 0.01, 2.0, 1.0, 0.01)
 
 
-def toggle_play():
-    clock = st.session_state.clock
-    clock.set_playing(not clock.playing, time.monotonic())
-
-
-def reset_playback():
-    old = st.session_state.simulation
-    load_initial(old.initial_cube, old.external_field, old.initial_omega)
-
-
-play, reset = st.columns([1,1])
-play.button('Pause' if st.session_state.clock.playing else 'Play', on_click=toggle_play, width='stretch')
-reset.button('Reset to applied initial conditions', on_click=reset_playback, width='stretch')
-
-
-@st.fragment(run_every=0.25 if st.session_state.clock.playing else None)
 def render_simulation():
     simulation = st.session_state.simulation
-    clock = st.session_state.clock
-    clock.tick(time.monotonic())
-    advanced = simulation.advance(max(0.0, clock.target_time-simulation.time))
-    if advanced > 0:
-        st.session_state.history.append((simulation.time, float(np.rad2deg(np.linalg.norm(simulation.omega)))))
-        st.session_state.history = st.session_state.history[-2000:]
-    elapsed, real, speed, status = st.columns(4)
-    elapsed.metric('Simulation time', f'{simulation.time:.3f} s')
-    real.metric('Active real time', f'{clock.wall_elapsed:.3f} s')
-    speed.metric('Time scale', f'{clock.speed:g}×')
-    status.metric('Playback', 'Playing' if clock.playing else 'Paused')
-    if clock.target_time-simulation.time > 0.1:
-        st.warning(f'Integration is catching up: {clock.target_time-simulation.time:.2f} simulated seconds pending. Reduce time scale for smoother playback.')
-    cube = simulation.cube
+    cube = simulation.initial_cube
     earth = simulation.external_field
     tau = torque(cube, earth)
     alpha = cube.angular_acceleration(earth)
     a,b,c,d = st.columns(4)
-    a.metric('Net magnetic moment', f'{np.linalg.norm(cube.moment):.5g} A·m²')
-    b.metric('Net torque', f'{np.linalg.norm(tau)*1e6:.5g} µN·m')
+    a.metric('Initial net magnetic moment', f'{np.linalg.norm(cube.moment):.5g} A·m²')
+    b.metric('Initial net torque', f'{np.linalg.norm(tau)*1e6:.5g} µN·m')
     c.metric('Inertia per axis', f'{cube.inertia[0,0]:.5g} kg·m²')
-    d.metric('Angular acceleration', f'{np.linalg.norm(alpha):.5g} rad/s²')
+    d.metric('Initial angular acceleration', f'{np.linalg.norm(alpha):.5g} rad/s²')
     visual, calculations = st.tabs(['Field explorer', 'Equations & calculations'])
     with visual:
-        st.plotly_chart(scene(cube, earth, field_arrow_scale=arrow_scale, show_lines=show_lines, show_arrows=show_arrows, vector_scale=vector_scale, live=clock.playing), width='stretch', key='field-scene')
-        st.caption('Orange: X coil · Green: Y coil · Violet: Z coil. Curves follow the combined field of all three coils, plus the external field. Line spacing is illustrative. Small arrows show direction; dots show magnitude. Coil-colored vectors: individual magnetic moments · Gold: net magnetic moment · Teal: external field · Magenta: net torque. Vector lengths scale linearly with magnitude, using separate scales for different units; labels give actual values. Reduce the vector scale if a tip extends beyond the view. Field traces exclude points within 2 mm of energized wires.')
-        st.caption('While playing, field-line curves use interpolated grid values for responsiveness. Paused curves use direct Biot–Savart tracing. Dynamics always use the exact magnetic moment and external-field torque.')
-        history = st.session_state.history
-        if len(history) > 1:
-            chart = go.Figure(go.Scatter(x=[h[0] for h in history], y=[h[1] for h in history]))
-            chart.update_layout(title='Angular speed over simulated time', xaxis_title='Simulation time (s)', yaxis_title='Angular speed (°/s)', height=250)
-            st.plotly_chart(chart, width='stretch', key='speed-history')
+        config = dict(side=cube.side_m, mass=cube.mass_kg, currents=cube.currents_a,
+                      turns=cube.turns, radiusFraction=cube.radius_fraction,
+                      quaternion=quaternion(cube.rotation).tolist(),
+                      omega=simulation.initial_omega.tolist(), field=earth.tolist())
+        player = Path(__file__).parent / 'web' / 'dist' / 'player.html'
+        if not player.exists():
+            st.error('Browser player is missing. Run npm ci && npm run build from this checkout.')
+            return
+        html = player.read_text().replace('__CONFIG_JSON__', json.dumps(config).replace('</', r'<\/'))
+        st.download_button('Download standalone player (HTML)', data=html, file_name='cubesat-player.html', mime='text/html', on_click='ignore')
+        components.html(html, height=1030, scrolling=True)
+        st.caption('Live playback runs entirely in your browser. Dragging the camera, changing time scale, and toggling display controls do not trigger Streamlit redraws. Applying new initial conditions reloads the player and resets time. The external field is always included.')
     with calculations:
+        st.caption('The table below shows applied initial conditions. Live vectors and trajectory data are displayed/exported in the browser player.')
         st.latex(r'R=fL,\quad A=\pi R^2,\quad \mathbf m_i=N_i I_i A\hat{\mathbf n}_i,\quad \mathbf m_{net}=\sum_i\mathbf m_i')
         st.latex(r'\mathbf B_{coils}=\sum_i\mathbf B_i,\quad \boldsymbol\tau=\mathbf m_{net}\times\mathbf B_{external}')
         st.latex(r'\dot{\mathbf R}=[\boldsymbol\omega]_{\times}\mathbf R,\quad \dot{\boldsymbol\omega}=\mathbf J^{-1}(\mathbf m_{world}\times\mathbf B_{external})')

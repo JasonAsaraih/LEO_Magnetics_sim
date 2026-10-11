@@ -1,0 +1,1 @@
+{"name":"cubesat-magnetorquer-player","private":true,"type":"module","scripts":{"build":"node web/build.mjs","test":"node --test web/*.test.mjs"},"dependencies":{"three":"0.180.0"},"devDependencies":{"esbuild":"0.25.12"}}
