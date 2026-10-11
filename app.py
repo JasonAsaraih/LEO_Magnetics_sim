@@ -29,7 +29,7 @@ c.metric('Coil center field', f'{abs(float(axial_field(coil,0)))*1e6:.5g} µT')
 visual, calculations = st.tabs(['Field explorer', 'Equations & calculations'])
 with visual:
     st.plotly_chart(scene(coil, earth, total), width='stretch')
-    st.caption('Rotate and zoom the 3D view. Arrow lengths are normalized; point colors show field magnitude. Points within 2 mm of the ideal wire are omitted.')
+    st.caption('Rotate and zoom the 3D view. Small arrows show field direction; point colors show field magnitude. The large magenta arrow shows torque direction with a normalized length, and its label gives the actual magnitude. Points within 2 mm of the ideal wire are omitted.')
     z = np.linspace(-0.3,0.3,301)
     chart = go.Figure(go.Scatter(x=z*1000, y=axial_field(coil,z)*1e6))
     chart.update_layout(title='Coil field along its normal', xaxis_title='Distance from center (mm)', yaxis_title='Signed axial B (µT)', height=300)
