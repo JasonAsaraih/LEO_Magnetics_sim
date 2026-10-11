@@ -62,3 +62,47 @@ def torque(coil, external_field_t):
 def axial_field(coil, z_m):
     """Exact circular-loop field along its normal, relative to coil center."""
     return MU0*coil.turns*coil.current_a*coil.radius_m**2/(2*(coil.radius_m**2+np.asarray(z_m)**2)**1.5)
+
+
+def field_lines(coil, external_field_t=None, extent=None, steps=360):
+    """Trace dr/ds = B/|B| using midpoint integration in both directions.
+
+    Seeds lie inside the coil in four meridional planes. Stop at the
+    display boundary, near the wire, at a field null, or on returning to
+    a seed. Seed density is illustrative, not a measure of magnetic flux.
+    """
+    extent = max(0.12, coil.radius_m*3) if extent is None else extent
+    external = np.zeros(3) if external_field_t is None else np.asarray(external_field_t)
+    u, v, _ = coil.basis
+    seeds = np.array([coil.radius_m*f*(np.cos(a)*u+np.sin(a)*v)
+                      for a in np.linspace(0, 2*np.pi, 4, endpoint=False)
+                      for f in (0.25, 0.5, 0.75)])
+    step = min(coil.radius_m/24, extent/100)
+
+    def direction(points):
+        field = coil_field(coil, points) + external
+        magnitude = np.linalg.norm(field, axis=-1)
+        valid = np.isfinite(magnitude) & (magnitude > 1e-20)
+        return np.divide(field, magnitude[:, None], out=np.zeros_like(field), where=valid[:, None]), valid
+
+    branches = []
+    for sign in (-1, 1):
+        points = seeds.copy()
+        active = np.ones(len(seeds), dtype=bool)
+        paths = [[seed.copy()] for seed in seeds]
+        for iteration in range(steps):
+            if not active.any():
+                break
+            d1, valid1 = direction(points)
+            d2, valid2 = direction(points+sign*step*d1/2)
+            candidate = points+sign*step*d2
+            _, valid3 = direction(candidate)
+            active &= valid1 & valid2 & valid3 & (np.abs(candidate) <= extent).all(axis=1)
+            for index in np.flatnonzero(active):
+                paths[index].append(candidate[index].copy())
+            closed = (iteration > 20) & (np.linalg.norm(candidate-seeds, axis=1) < step*0.8)
+            active &= ~closed
+            points = candidate
+        branches.append(paths)
+    return [np.array(backward[:0:-1]+forward) for backward, forward in zip(*branches)
+            if len(backward)+len(forward) > 3]

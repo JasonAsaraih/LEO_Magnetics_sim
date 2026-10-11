@@ -1,10 +1,10 @@
 """Plot construction only: consumes SI-unit model outputs."""
 import numpy as np
 import plotly.graph_objects as go
-from physics import coil_field, torque
+from physics import coil_field, torque, field_lines
 
 
-def scene(coil, earth_t, show_total=False, field_arrow_scale=0.35):
+def scene(coil, earth_t, show_total=False, field_arrow_scale=0.35, show_lines=True):
     extent = max(0.12, coil.radius_m*3)
     axis = np.linspace(-extent, extent, 9)
     points = np.stack(np.meshgrid(axis, axis, axis, indexing='ij'), axis=-1).reshape(-1, 3)
@@ -20,6 +20,14 @@ def scene(coil, earth_t, show_total=False, field_arrow_scale=0.35):
     arrows = b/strength[:, None]*(extent*0.05*field_arrow_scale) if len(b) else b
     fig = go.Figure(go.Cone(x=p[:,0], y=p[:,1], z=p[:,2], u=arrows[:,0], v=arrows[:,1], w=arrows[:,2], sizemode='raw', sizeref=1, anchor='tail', showscale=False, colorscale='Blues', name='Field direction', hoverinfo='skip'))
     fig.add_trace(go.Scatter3d(x=p[:,0], y=p[:,1], z=p[:,2], mode='markers', marker=dict(size=2, color=strength*1e6, colorscale='Viridis', colorbar=dict(title='|B| µT')), customdata=strength*1e6, hovertemplate='|B|=%{customdata:.3g} µT<extra></extra>', name='Field magnitude'))
+    if show_lines:
+        paths = field_lines(coil, earth_t if show_total else None, extent=extent)
+        # None separators keep independently integrated paths disconnected.
+        coordinates = [[], [], []]
+        for path in paths:
+            for axis_index in range(3):
+                coordinates[axis_index].extend(path[:,axis_index].tolist()+[None])
+        fig.add_trace(go.Scatter3d(x=coordinates[0], y=coordinates[1], z=coordinates[2], mode='lines', line=dict(color='#458acc', width=3), name='Magnetic field lines', hoverinfo='skip'))
     wire = coil.wire()
     fig.add_trace(go.Scatter3d(x=wire[:,0], y=wire[:,1], z=wire[:,2], mode='lines', line=dict(color='#ef8b2c', width=8), name='Coil'))
     normal = coil.basis[2]*extent*0.8
