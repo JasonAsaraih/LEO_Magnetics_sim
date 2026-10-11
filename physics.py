@@ -186,7 +186,6 @@ class CubeSat:
         seeds = []
         for coil in self.coils:
             u, v, _ = coil.basis
-            for angle in np.linspace(0, 2*np.pi, 8, endpoint=False):
-                for fraction in (0.35, 0.65):
-                    seeds.append(np.asarray(coil.center_m)+coil.radius_m*fraction*(np.cos(angle)*u+np.sin(angle)*v))
+            for angle in np.linspace(0, 2*np.pi, 4, endpoint=False):
+                seeds.append(np.asarray(coil.center_m)+coil.radius_m*0.5*(np.cos(angle)*u+np.sin(angle)*v))
         return trace_field_lines(lambda p: self.field(p)+external, np.array(seeds), extent, self.side_m/60)
