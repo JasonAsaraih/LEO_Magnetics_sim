@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from physics import coil_field, torque
 
 
-def scene(coil, earth_t, show_total=False):
+def scene(coil, earth_t, show_total=False, field_arrow_scale=0.35):
     extent = max(0.12, coil.radius_m*3)
     axis = np.linspace(-extent, extent, 9)
     points = np.stack(np.meshgrid(axis, axis, axis, indexing='ij'), axis=-1).reshape(-1, 3)
@@ -15,8 +15,8 @@ def scene(coil, earth_t, show_total=False):
     valid = np.isfinite(magnitude) & (magnitude > 0)
     p, b, strength = points[valid], field[valid], magnitude[valid]
     # Normalize arrow lengths to show direction; magnitude is encoded separately.
-    arrows = b/strength[:, None]*(extent*0.05) if len(b) else b
-    fig = go.Figure(go.Cone(x=p[:,0], y=p[:,1], z=p[:,2], u=arrows[:,0], v=arrows[:,1], w=arrows[:,2], sizemode='absolute', sizeref=extent*0.035, showscale=False, colorscale='Blues', name='Field direction', hoverinfo='skip'))
+    arrows = b/strength[:, None]*(extent*0.05*field_arrow_scale) if len(b) else b
+    fig = go.Figure(go.Cone(x=p[:,0], y=p[:,1], z=p[:,2], u=arrows[:,0], v=arrows[:,1], w=arrows[:,2], sizemode='absolute', sizeref=extent*0.035*field_arrow_scale, showscale=False, colorscale='Blues', name='Field direction', hoverinfo='skip'))
     fig.add_trace(go.Scatter3d(x=p[:,0], y=p[:,1], z=p[:,2], mode='markers', marker=dict(size=2, color=strength*1e6, colorscale='Viridis', colorbar=dict(title='|B| µT')), customdata=strength*1e6, hovertemplate='|B|=%{customdata:.3g} µT<extra></extra>', name='Field magnitude'))
     wire = coil.wire()
     fig.add_trace(go.Scatter3d(x=wire[:,0], y=wire[:,1], z=wire[:,2], mode='lines', line=dict(color='#ef8b2c', width=8), name='Coil'))
