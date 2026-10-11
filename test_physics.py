@@ -60,3 +60,40 @@ def test_normal_vector_orientation():
     for normal in ([0, 0, 0], [float('nan'), 0, 1]):
         with pytest.raises(ValueError):
             Coil.from_normal(0.1, 100, 0.04, normal)
+
+
+def test_cube_geometry_and_combined_field():
+    from physics import CubeSat
+    cube = CubeSat(0.1, 1, (0.1, -0.2, 0.3), (100, 150, 200), tilt_deg=37, azimuth_deg=22)
+    np.testing.assert_allclose(cube.rotation.T@cube.rotation, np.eye(3), atol=1e-15)
+    for i, coil in enumerate(cube.coils):
+        np.testing.assert_allclose(coil.center_m, cube.rotation[:,i]*0.05)
+        np.testing.assert_allclose((coil.wire()-coil.center_m)@cube.rotation[:,i], 0, atol=1e-15)
+    points = np.array([[0,0,0], [0.12,0.08,0.15]])
+    np.testing.assert_allclose(cube.field(points), sum(coil_field(c, points) for c in cube.coils))
+    expected = cube.rotation@(np.array(cube.currents_a)*cube.turns*np.pi*0.04**2)
+    np.testing.assert_allclose(cube.moment, expected)
+
+
+def test_cube_inertia_and_independent_coils():
+    from physics import CubeSat
+    cube = CubeSat(0.1, 1, (0.1,0,0))
+    np.testing.assert_allclose(cube.inertia, np.eye(3)/600)
+    np.testing.assert_allclose(cube.moment, [100*0.1*np.pi*0.04**2,0,0], atol=1e-15)
+    doubled_mass = CubeSat(0.1, 2, (0.1,0,0))
+    np.testing.assert_allclose(doubled_mass.moment, cube.moment)
+    np.testing.assert_allclose(doubled_mass.angular_acceleration([0,0,40e-6]), cube.angular_acceleration([0,0,40e-6])/2)
+    doubled_size = CubeSat(0.2, 1, (0.1,0,0))
+    np.testing.assert_allclose(doubled_size.inertia, 4*cube.inertia)
+    np.testing.assert_allclose(doubled_size.moment, 4*cube.moment)
+    off = CubeSat(0.1, 1, (0,0,0))
+    np.testing.assert_allclose(off.field([[0,0,0]]), 0)
+    assert not off.field_lines()
+
+
+def test_translated_coil_axis_solution():
+    from dataclasses import replace
+    coil = replace(Coil(), center_m=(0.02,0.03,0.04))
+    z = np.array([0,0.02,0.1])
+    points = np.array(coil.center_m)+z[:,None]*coil.basis[2]
+    np.testing.assert_allclose(coil_field(coil,points),axial_field(coil,z)[:,None]*coil.basis[2],rtol=3e-4,atol=1e-12)

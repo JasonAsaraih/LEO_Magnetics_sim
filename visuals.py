@@ -5,10 +5,10 @@ from physics import coil_field, torque, field_lines
 
 
 def scene(coil, earth_t, show_total=False, field_arrow_scale=0.35, show_lines=True, show_arrows=True):
-    extent = max(0.12, coil.radius_m*3)
+    extent = coil.side_m*2
     axis = np.linspace(-extent, extent, 9)
     points = np.stack(np.meshgrid(axis, axis, axis, indexing='ij'), axis=-1).reshape(-1, 3)
-    field = coil_field(coil, points)
+    field = coil.field(points)
     if show_total:
         field = field + earth_t
     magnitude = np.linalg.norm(field, axis=1)
@@ -23,17 +23,28 @@ def scene(coil, earth_t, show_total=False, field_arrow_scale=0.35, show_lines=Tr
         fig.add_trace(go.Cone(x=p[:,0], y=p[:,1], z=p[:,2], u=arrows[:,0], v=arrows[:,1], w=arrows[:,2], sizemode='raw', sizeref=1, anchor='tail', showscale=False, colorscale='Blues', name='Field direction', hoverinfo='skip'))
         fig.add_trace(go.Scatter3d(x=p[:,0], y=p[:,1], z=p[:,2], mode='markers', marker=dict(size=2, color=strength*1e6, colorscale='Viridis', colorbar=dict(title='|B| µT')), customdata=strength*1e6, hovertemplate='|B|=%{customdata:.3g} µT<extra></extra>', name='Field magnitude'))
     if show_lines:
-        paths = field_lines(coil, earth_t if show_total else None, extent=extent)
+        paths = coil.field_lines(earth_t if show_total else None, extent=extent)
         # None separators keep independently integrated paths disconnected.
         coordinates = [[], [], []]
         for path in paths:
             for axis_index in range(3):
                 coordinates[axis_index].extend(path[:,axis_index].tolist()+[None])
         fig.add_trace(go.Scatter3d(x=coordinates[0], y=coordinates[1], z=coordinates[2], mode='lines', line=dict(color='#458acc', width=3), name='Magnetic field lines', hoverinfo='skip'))
-    wire = coil.wire()
-    fig.add_trace(go.Scatter3d(x=wire[:,0], y=wire[:,1], z=wire[:,2], mode='lines', line=dict(color='#ef8b2c', width=8), name='Coil'))
-    normal = coil.basis[2]*extent*0.8
-    fig.add_trace(go.Scatter3d(x=[0,normal[0]], y=[0,normal[1]], z=[0,normal[2]], mode='lines', line=dict(color='#e85d75', width=5), name='Positive coil normal'))
+    # Rotate the cube and all three face-mounted coils together.
+    corners = np.array([[x,y,z] for x in (-1,1) for y in (-1,1) for z in (-1,1)])*coil.side_m/2
+    corners = corners@coil.rotation.T
+    fig.add_trace(go.Mesh3d(x=corners[:,0], y=corners[:,1], z=corners[:,2], alphahull=0, color='#8c9bb1', opacity=0.12, name='Cube', hoverinfo='skip', showlegend=True))
+    for i, start in enumerate(corners):
+        for j in range(i+1, len(corners)):
+            if (i^j) in (1,2,4):
+                end = corners[j]
+                fig.add_trace(go.Scatter3d(x=[start[0],end[0]], y=[start[1],end[1]], z=[start[2],end[2]], mode='lines', line=dict(color='#8c9bb1', width=3), showlegend=False, hoverinfo='skip'))
+    for label, color, winding in zip(('X','Y','Z'), ('#ef8b2c','#4caf70','#8168ed'), coil.coils):
+        wire = winding.wire()
+        fig.add_trace(go.Scatter3d(x=wire[:,0], y=wire[:,1], z=wire[:,2], mode='lines', line=dict(color=color, width=8), name=f'{label} coil'))
+        start = np.asarray(winding.center_m)
+        tip = start+winding.basis[2]*coil.side_m*0.3
+        fig.add_trace(go.Scatter3d(x=[start[0],tip[0]], y=[start[1],tip[1]], z=[start[2],tip[2]], mode='lines+text', text=['',f'+{label}'], textfont=dict(color=color), line=dict(color=color,width=4), showlegend=False, hoverinfo='skip'))
     external = np.asarray(earth_t, dtype=float)
     external_magnitude = np.linalg.norm(external)
     if external_magnitude > 0:
@@ -55,7 +66,7 @@ def scene(coil, earth_t, show_total=False, field_arrow_scale=0.35, show_lines=Tr
         label = f'τ = {tau_magnitude*1e6:.3g} µN·m'
         fig.add_trace(go.Scatter3d(x=[0,tip[0]], y=[0,tip[1]], z=[0,tip[2]], mode='lines+text', text=['',label], textposition='top center', textfont=dict(color=color, size=16), line=dict(color=color, width=10), name='Torque τ', hovertemplate=label+'<extra>Torque direction</extra>'))
         head = tip*0.22
-        fig.add_trace(go.Cone(x=[tip[0]], y=[tip[1]], z=[tip[2]], u=[head[0]], v=[head[1]], w=[head[2]], anchor='tip', sizemode='absolute', sizeref=extent*0.16, colorscale=[[0,color],[1,color]], showscale=False, showlegend=False, hoverinfo='skip'))
+        fig.add_trace(go.Cone(x=[tip[0]], y=[tip[1]], z=[tip[2]], u=[head[0]], v=[head[1]], w=[head[2]], anchor='tip', sizemode='raw', sizeref=1, colorscale=[[0,color],[1,color]], showscale=False, showlegend=False, hoverinfo='skip'))
     else:
         fig.add_annotation(text='τ = 0 · no torque direction', x=0.02, y=0.98, xref='paper', yref='paper', showarrow=False, font=dict(color='#d528b8', size=16))
     fig.update_layout(height=580, margin=dict(l=0,r=0,t=0,b=0), scene=dict(aspectmode='cube', xaxis_title='x (m)', yaxis_title='y (m)', zaxis_title='z (m)', xaxis=dict(range=[-extent,extent]), yaxis=dict(range=[-extent,extent]), zaxis=dict(range=[-extent,extent])), legend=dict(orientation='h'))

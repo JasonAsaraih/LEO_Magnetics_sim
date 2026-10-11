@@ -1,10 +1,10 @@
 # CubeSat Magnetorquer Lab
 
-Interactive 3D magnetic-field and torque calculator for an air-core circular magnetorquer. Adjust current, turns, radius, coil tilt/azimuth, and external field components. Review equations and vector calculations in the second tab and export results as CSV.
+Interactive 3D field and torque calculator for three orthogonal air-core circular coils mounted on the +X, +Y, and +Z faces of a cube.
 
 ## Run
 
-Python 3.12 is validated.
+Python 3.12 is validated. From this checkout:
 
 ```bash
 python -m venv /workspace/leo-magnetics-env/venv
@@ -12,23 +12,31 @@ python -m venv /workspace/leo-magnetics-env/venv
 /workspace/leo-magnetics-env/venv/bin/python -m streamlit run app.py --server.headless=true --browser.gatherUsageStats=false
 ```
 
-Run those commands from this checkout. Streamlit normally listens on port 8501. Cloud onboarding validates locally; it does not provide a web preview. To view the UI, run locally or use your development platform's supported port access.
+Streamlit normally listens on port 8501. Run locally or use your development platform's supported port access to view the UI; cloud onboarding does not provide web previews.
 
-## Structure
+## Controls and calculations
 
-- `physics.py`: pure SI-unit equations, coil geometry, Biot–Savart quadrature, exact axial field, and external-field torque.
-- `visuals.py`: Plotly scene construction, independent of UI controls.
-- `app.py`: Streamlit controls and calculation display.
-- `test_physics.py`: exact-solution, torque, sign, and singularity checks.
+- Set cube side length and total mass. Rotational inertia assumes a uniform solid cube: J = ML²/6 on each axis about the center of mass.
+- Set current (including negative/zero) and turns independently for the X, Y, and Z coils.
+- Coil radius is a configurable fraction of cube side length, below half the side. Coils stay centered on three perpendicular faces.
+- Rotate the whole cube with tilt/azimuth or a body +Z normal vector. The vector is normalized; zero vectors are rejected. Body X/Y follow the deterministic orthogonal basis displayed in the calculations tab. At zero tilt and azimuth, body and world axes coincide.
+- Set the external field's world-coordinate x/y/z components in µT.
+- Toggle field lines and field arrows independently. Hiding arrows also hides magnitude dots and the color scale. Arrow size controls actual raw Plotly cone lengths.
+- Net magnetic moment is the vector sum of NIπR² times each coil normal. Torque is m_net × B_external. Angular acceleration is J⁻¹τ. Mass changes inertia/acceleration, not magnetic moment.
+
+The external field vector is teal; net torque is magenta. Their displayed lengths are normalized and labels show actual magnitudes. Coils are orange (X), green (Y), and violet (Z). A current sweep shows net torque versus X-coil current while Y/Z remain fixed. Equations, per-coil and combined vectors, body axes, and CSV export appear in the calculations tab.
+
+## Code and validation
+
+- `physics.py`: UI-independent SI equations; coil geometry including face offsets; Biot–Savart field integration; CubeSat geometry, inertia, and superposition; shared field-line tracing.
+- `visuals.py`: cube, coils, field visualization, and labeled vector rendering.
+- `app.py`: controls and calculation review.
+- `test_physics.py`: analytical field, torque, normal vectors, geometry, superposition, inertia and scaling checks.
 
 ```bash
 /workspace/leo-magnetics-env/venv/bin/python -m pytest -q
 ```
 
-The coil normal uses polar tilt from +z and azimuth from +x toward +y. Positive current follows the right-hand rule. The field is computed from 240 straight segments; grid points within 2 mm of the ideal wire are omitted. Arrow lengths are normalized; marker color carries magnitude. The axial chart uses the exact analytical solution.
+Fields use 240 segments per circular winding. Field lines integrate dr/ds = B/|B| using midpoint integration in both directions from coil-plane seeds. They trace the combined coil field plus the external field when selected. Traces stop at the display boundary, near energized wires, at a field null, when returning to a seed, or after 360 steps per direction. Seed spacing is illustrative, not flux density. Points within 2 mm of energized ideal wires are omitted.
 
-This model assumes coincident circular turns and a uniform external field. It does not model core permeability/saturation, thermal limits, resistance, orbit propagation, induced electric fields, or attitude dynamics. The coil's own field is excluded from net torque. A magnetorquer cannot generate torque along the external magnetic field.
-
-Connected field lines are enabled by default and can be toggled under Display. They integrate dr/ds = B/|B| with the midpoint method, using the same Biot–Savart field as the arrows (plus the external field when selected). Curves stop near the wire, at nulls, at the view boundary, upon returning to a seed, or after 360 steps per direction. They are finite traces, not forcibly closed loops; their seed spacing does not represent flux density.
-
-Under Coil orientation, choose Angles or Normal vector. In Normal vector mode, enter x/y/z components for the vector perpendicular to the coil plane. Any nonzero length is accepted and normalized; a zero vector displays an error. The derived tilt and azimuth are displayed for review. Show field arrows toggles both the small arrows and the colored field-magnitude dots/color scale; connected field lines and the external-field/torque vectors remain independent.
+Assumptions: uniform solid cube mass distribution, coincident circular turns, vacuum permeability, and a uniform external field. No core saturation, heating, resistance, orbital model, or time integration of attitude. Coils' own fields do not provide net external torque. Magnetorquers cannot produce torque along the external field. This is an instantaneous engineering calculator, not a flight qualification model.
