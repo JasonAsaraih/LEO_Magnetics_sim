@@ -36,3 +36,18 @@ def test_update_previews_orientation_and_resets_even_for_same_inputs():
     next(b for b in app.button if b.label=='Update initial state').click().run(timeout=30)
     assert app.session_state['initial_revision']==revision+2
     assert not app.exception
+
+
+def test_pid_settings_and_targets_apply_with_initial_state():
+    import numpy as np
+    app=AppTest.from_file('app.py').run(timeout=30)
+    next(c for c in app.checkbox if c.label=='Enable PID current control').set_value(True)
+    next(n for n in app.number_input if n.label=='Final pitch (°)').set_value(30.0)
+    next(n for n in app.number_input if n.label=='X current limit (A)').set_value(.01)
+    next(b for b in app.button if b.label=='Update initial state').click().run(timeout=30)
+    settings=app.session_state['controller_config']
+    assert settings['enabled']
+    assert settings['targetEulerDegrees']==[0,30,0]
+    np.testing.assert_allclose(settings['targetRate'],[0,0,0])
+    assert settings['currentLimits'][0]==.01
+    assert not app.exception

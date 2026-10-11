@@ -25,6 +25,7 @@ with sync_playwright() as p:
     frame.locator('#speed').evaluate('(e)=>{e.value=10;e.dispatchEvent(new Event("input"))}')
     frame.locator('#play').click()
     frame.wait_for_function('playerDiagnostics().time>5')
+    frame.locator('#view canvas').scroll_into_view_if_needed()
     start=frame.evaluate('playerDiagnostics()')
     rect=frame.locator('#view canvas').bounding_box()
     x,y=rect['x']+rect['width']*.45,rect['y']+rect['height']*.4

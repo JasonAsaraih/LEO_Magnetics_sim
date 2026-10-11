@@ -1,11 +1,7 @@
 // SI-unit equations shared by the browser worker and numerical tests.
-export const add=(a,b)=>a.map((v,i)=>v+b[i]);
-export const scale=(a,s)=>a.map(v=>v*s);
-export const dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0);
-export const norm=a=>Math.hypot(...a);
-export const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
-export function multiply(a,b) {return [a[0]*b[0]-dot(a.slice(1),b.slice(1)),...add(add(scale(b.slice(1),a[0]),scale(a.slice(1),b[0])),cross(a.slice(1),b.slice(1)))];}
-export function rotate(q,v) {const t=scale(cross(q.slice(1),v),2);return add(add(v,scale(t,q[0])),cross(q.slice(1),t));}
+import {add,scale,dot,norm,cross,multiply,rotate} from './math.js';
+export {add,scale,dot,norm,cross,multiply,rotate} from './math.js';
+import {PIDController} from './controller.js';
 export function moments(c) {return c.currents.map((v,i)=>v*c.turns[i]*Math.PI*(c.side*c.radiusFraction)**2);}
 export function derivative(y,c) {const q=y.slice(0,4),w=y.slice(4),m=rotate(q,moments(c));return [...scale(multiply([0,...w],q),.5),...scale(cross(m,c.field),6/(c.mass*c.side**2))];}
 export function step(y,c,dt) {
@@ -13,11 +9,25 @@ export function step(y,c,dt) {
   const result=add(y,scale(add(add(k1,scale(k2,2)),add(scale(k3,2),k4)),dt/6));
   const qn=norm(result.slice(0,4));for(let i=0;i<4;i++)result[i]/=qn;return result;
 }
+export function initializeController(state,c) {
+  state.currents=[...c.currents];
+  if(c.controller?.enabled) {
+    state.controller=new PIDController(c);
+    state.currents=state.controller.update(state.y,0);
+    state.nextControl=state.time+c.controller.period;
+  }
+}
 export function advance(state,c,target,budget=2000) {
-  const frequency=Math.sqrt(norm(moments(c))*norm(c.field)*6/(c.mass*c.side**2));
+  if(!state.currents)initializeController(state,c);
   for(let i=0;i<budget && target-state.time>1e-12;i++) {
-    const dt=Math.min(target-state.time,.05,.03/Math.max(norm(state.y.slice(4)),frequency,1e-12));
-    state.y=step(state.y,c,dt);state.time+=dt;
+    if(state.controller && state.time>=state.nextControl-1e-10) {
+      state.currents=state.controller.update(state.y,c.controller.period);
+      state.nextControl+=c.controller.period;
+    }
+    const active={...c,currents:state.currents};
+    const frequency=Math.sqrt(norm(moments(active))*norm(c.field)*6/(c.mass*c.side**2));
+    const dt=Math.min(target-state.time,.05,.03/Math.max(norm(state.y.slice(4)),frequency,1e-12),state.controller?state.nextControl-state.time:Infinity);
+    state.y=step(state.y,active,dt);state.time+=dt;
   }
 }
 export function wires(c,q,segments=240) {

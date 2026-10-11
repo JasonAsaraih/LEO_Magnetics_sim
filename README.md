@@ -28,7 +28,7 @@ This regenerates `web/dist/player.html`. It bundles Three.js and the worker into
 
 1. Set cube side length, total mass, coil radius, each coil's current/turns, initial orientation, angular velocity, and external field in the sidebar.
 2. Press **Update initial state**. Form edits alone do not alter the applied model. All coils remain perpendicular; orientation rotates the whole cube. Body +Z normal vectors are normalized; zero is rejected. Angular velocity and external field use world coordinates.
-3. Use **Play**, **Pause**, and **Reset** inside the player. Coil currents stay fixed in the body frame; the external field stays constant in the world frame. Reset returns to the applied initial conditions.
+3. Use **Play**, **Pause**, and **Reset** inside the player. Manual coil currents stay fixed in the body frame; when PID is enabled the controller replaces them with dynamic commands; the external field stays constant in the world frame. Reset returns to the applied initial conditions.
 4. Drag the **Time scale** slider while playing: 10× means 10 simulated seconds per active real second. Simulation time, active real time, angular speed, magnetic moment, and torque update live. Pauses exclude elapsed wall time.
 
 Mouse drag rotates the camera, wheel/pinch zooms, and right-drag pans. Camera controls run independently of the physics worker. Field lines and field arrows can be toggled independently; hiding arrows also hides magnitude dots. Arrow size and physical-vector display scale are native sliders and do not trigger Streamlit redraws. Applying initial conditions reloads the player. Refreshing the page does not preserve a trajectory.
@@ -45,12 +45,15 @@ Attitude uses quaternion RK4 integration: q̇ = ½[0,ω_world]⊗q and ω̇ = τ
 
 The 3D scene renders via WebGL on browser animation frames. Physics runs in a Web Worker; field geometry refreshes at up to 2 Hz, so it may lag slightly behind attitude. Biot–Savart uses 240 segments per energized circular coil, summed with the external field. Display field lines use midpoint integration of a trilinearly interpolated 9×9×9 field grid from **12 seeds (4 per coil)**. Trace spacing is illustrative, not flux density. Near-wire points within 2 mm are excluded. Display interpolation does not enter attitude dynamics.
 
-Assumptions: uniform solid-cube mass distribution, coincident circular turns, vacuum permeability, and uniform external field. No core saturation, heating, resistance, damping, feedback control, or orbital model. Self-fields do not supply net external torque. Magnetorquers cannot produce torque parallel to the external field. This is an engineering exploration model, not a flight qualification model.
+Assumptions: uniform solid-cube mass distribution, coincident circular turns, vacuum permeability, and uniform external field. No core saturation, heating, winding inductance/resistance, passive damping, or orbital model. Optional sampled PID feedback is available. Self-fields do not supply net external torque. Magnetorquers cannot produce torque parallel to the external field. This is an engineering exploration model, not a flight qualification model.
 
 ## Code and tests
 
 - `physics.py`, `dynamics.py`: Python reference equations and attitude integrator.
-- `web/physics.js`: SI-unit browser equations, RK4, Biot–Savart, grid interpolation, field-line tracing.
+- `web/physics.js`: SI-unit browser equations, RK4, sample scheduling, Biot–Savart, grid interpolation, field-line tracing.
+- `web/controller.js`: editable PID torque law, magnetic allocation, limits, anti-windup, and all-update peak logging.
+- `controller.py`: Python reference for the initial PID commands used in the calculation table.
+- `web/math.js`: quaternion, rotation-error, and vector helpers.
 - `web/worker.js`: background physics/field work.
 - `web/player.js`: persistent WebGL scene, camera, sliders, playback clock, CSV export.
 - `app.py`: initial-condition form, player embedding/export, initial calculation review.
@@ -69,3 +72,27 @@ Browser equation tests compare a rotated three-coil trajectory and magnetic fiel
 ```
 
 It verifies the native time slider, 10× elapsed time, camera movement during playback, display toggles, pause, and reset in the actual player iframe.
+
+
+## PID control and final targets
+
+Enable **PID current control** in the sidebar, set targets/gains/limits, then click **Update initial state**. PID takes over all three currents at simulation time zero. Manual current entries apply only when PID is off. The initial vectors and calculation table use the initial controlled currents when PID is enabled.
+
+- Set target world angular velocities ωx/ωy/ωz in degrees per second.
+- When all three target rates are zero, set final roll/pitch/yaw in degrees. The target attitude is Rz(yaw) Ry(pitch) Rx(roll). Control uses a shortest-path quaternion rotation error rather than subtracting Euler angles, avoiding wraparound at ±180°.
+- When any target rate is nonzero, control uses rate PID and ignores the final attitude inputs.
+- Set Kp, Ki, Kd, each coil's absolute current limit, the simulated control sample period, and the derivative filter time. A common set of gains applies to the three world axes. The default Ki is zero; increase it only as needed.
+
+In zero-rate attitude mode, desired torque is Kp e_angle + Ki ∫e_angle dt + Kd(ω_target − ω). In rate mode it is Kp e_rate + Ki ∫e_rate dt + Kd filtered(de_rate/dt). Radians and rad/s are used internally, and gains output N·m. Gains have different units between modes: the attitude P/I/D inputs are rad, rad·s, and rad/s; the rate inputs are rad/s, rad, and rad/s². Retune when changing modes.
+
+Magnetic allocation uses m_world = (B × τ_desired)/|B|², rotates that into the body frame, then computes I_i = m_body_i/(N_i πR²). This produces only the torque perpendicular to B; each current is clipped to its configured limit. The integral accumulates only error perpendicular to B and freezes while currents saturate. With zero external field the command is zero and the requested torque remains unmet. A constant-field uniform cube cannot change the angular-velocity component along B; arbitrary target velocities/attitudes are not guaranteed reachable. Live error and unmet-torque readouts expose this limitation.
+
+To implement your own controller, edit **`desiredTorque()` in `web/controller.js`**, then run `npm run build`. It receives current Euler angles, quaternion, angular velocity, angle/rate errors, target rate, integral, filtered derivative, mode, and gains. Return a world-frame torque vector in N·m. If you change the torque law, update the initial-command reference in `controller.py` too; the Python initial tables otherwise continue to describe the built-in PID law. The allocator, coil limits, and peak logs remain reusable; `web/math.js` provides quaternion helpers.
+
+The player logs per-coil **peak absolute required current**, **peak absolute applied current**, and both corresponding **peak |ΔI/Δt|**, considering every controller sample since Reset. Required values are before clipping, so saturation cannot hide demand. Rates are finite differences over the simulated sample period; the initial ideal turn-on jump is excluded. These are sampled command-change rates, not a winding electrical-rise model or a bound on the continuous physical derivative. Reset clears PID history, integral state, and peak logs.
+
+Use **Export peak current log** for all-run peak values and **Export trajectory CSV** for the most recent 2,000 display samples, including applied/required currents and current-change rates. Display sampling can be slower than control updates; peak statistics still include all updates. Browser controller tests check a reachable final pitch, a rate target, saturation/anti-windup, derivative peaks, frame-cadence independence, and agreement with Python initial commands. Optional end-to-end PID validation:
+
+```bash
+.venv/bin/python web/check_pid.py http://127.0.0.1:8501
+```
