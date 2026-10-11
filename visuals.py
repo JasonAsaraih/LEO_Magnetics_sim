@@ -24,6 +24,17 @@ def scene(coil, earth_t, show_total=False, field_arrow_scale=0.35):
     fig.add_trace(go.Scatter3d(x=wire[:,0], y=wire[:,1], z=wire[:,2], mode='lines', line=dict(color='#ef8b2c', width=8), name='Coil'))
     normal = coil.basis[2]*extent*0.8
     fig.add_trace(go.Scatter3d(x=[0,normal[0]], y=[0,normal[1]], z=[0,normal[2]], mode='lines', line=dict(color='#e85d75', width=5), name='Positive coil normal'))
+    external = np.asarray(earth_t, dtype=float)
+    external_magnitude = np.linalg.norm(external)
+    if external_magnitude > 0:
+        tip = external/external_magnitude*extent*0.9
+        color = '#00a6a6'
+        label = f'B external = {external_magnitude*1e6:.3g} µT'
+        fig.add_trace(go.Scatter3d(x=[0,tip[0]], y=[0,tip[1]], z=[0,tip[2]], mode='lines+text', text=['',label], textposition='top center', textfont=dict(color=color, size=16), line=dict(color=color, width=8), name='External magnetic field', hovertemplate=label+'<extra>External field direction</extra>'))
+        head = tip*0.18
+        fig.add_trace(go.Cone(x=[tip[0]], y=[tip[1]], z=[tip[2]], u=[head[0]], v=[head[1]], w=[head[2]], anchor='tip', sizemode='raw', sizeref=1, colorscale=[[0,color],[1,color]], showscale=False, showlegend=False, hoverinfo='skip'))
+    else:
+        fig.add_annotation(text='B external = 0 · no field direction', x=0.02, y=0.91, xref='paper', yref='paper', showarrow=False, font=dict(color='#00a6a6', size=16))
     tau = torque(coil, earth_t)
     tau_magnitude = np.linalg.norm(tau)
     # Suppress roundoff torque for parallel vectors; normalize only for display.
