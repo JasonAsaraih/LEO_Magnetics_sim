@@ -96,3 +96,11 @@ Use **Export peak current log** for all-run peak values and **Export trajectory 
 ```bash
 .venv/bin/python web/check_pid.py http://127.0.0.1:8501
 ```
+
+## Approximate coil inductance
+
+Each coil has a **winding bundle diameter (mm)** input: the diameter of the entire round cross-section containing all turns, not an individual wire's diameter. Click Update initial state to apply geometry/turn changes. Approximate inductance appears in mH above the player and in the player’s coil table (including exported standalone players); the calculations tab shows the equation and offers a dedicated inductance CSV with values in henries.
+
+For a thin circular air-core winding, the model uses L ≈ μ₀ N² R [ln(8R/a) − 7/4], where R is mean turn radius and a is half the winding-bundle diameter. It approximates uniformly distributed DC current in a round winding cross-section and requires a/R ≤ 0.1. Turn count scales the estimate as N² when geometry stays fixed. The default 100-turn, 40-mm-radius, 3-mm-bundle coil estimates approximately 1.82 mH.
+
+The model reports **Outside model** instead of a number when the thin-bundle condition fails. Flat or rectangular winding packs, core materials, conductive mounting structures, and inter-coil mutual inductance are not modeled. Inductance is a design estimate only; it does not add winding electrical dynamics or change the ideal PID current response. `approximate_inductance()` in `physics.py` contains the reviewable SI equation and geometry checks.

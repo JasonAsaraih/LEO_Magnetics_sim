@@ -97,3 +97,21 @@ def test_translated_coil_axis_solution():
     z = np.array([0,0.02,0.1])
     points = np.array(coil.center_m)+z[:,None]*coil.basis[2]
     np.testing.assert_allclose(coil_field(coil,points),axial_field(coil,z)[:,None]*coil.basis[2],rtol=3e-4,atol=1e-12)
+
+
+def test_air_core_inductance_estimate_and_turn_scaling():
+    from physics import approximate_inductance, MU0
+    coil = Coil(0.1,100,0.04)
+    expected = MU0*100**2*.04*(np.log(8*.04/.0015)-1.75)
+    np.testing.assert_allclose(approximate_inductance(coil,.003),expected)
+    doubled = Coil(-1,200,0.04,80,50)
+    np.testing.assert_allclose(approximate_inductance(doubled,.003),4*expected)
+    assert approximate_inductance(coil,.002)>expected
+
+
+def test_inductance_rejects_invalid_or_thick_bundle_geometry():
+    import pytest
+    from physics import approximate_inductance
+    for diameter in (0,-.001,float('nan'),.02):
+        with pytest.raises(ValueError):
+            approximate_inductance(Coil(),diameter)

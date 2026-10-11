@@ -51,3 +51,18 @@ def test_pid_settings_and_targets_apply_with_initial_state():
     np.testing.assert_allclose(settings['targetRate'],[0,0,0])
     assert settings['currentLimits'][0]==.01
     assert not app.exception
+
+
+def test_inductance_updates_from_applied_winding_geometry():
+    app=AppTest.from_file('app.py').run(timeout=30)
+    baseline=next(m for m in app.metric if m.label=='X approximate inductance').value
+    next(n for n in app.number_input if n.label=='X turns').set_value(200)
+    next(n for n in app.number_input if n.label=='X winding bundle diameter (mm)').set_value(2.0)
+    next(b for b in app.button if b.label=='Update initial state').click().run(timeout=30)
+    assert next(m for m in app.metric if m.label=='X approximate inductance').value!=baseline
+    assert app.session_state['bundle_diameters_m'][0]==.002
+    next(n for n in app.number_input if n.label=='X winding bundle diameter (mm)').set_value(20.0)
+    next(b for b in app.button if b.label=='Update initial state').click().run(timeout=30)
+    assert next(m for m in app.metric if m.label=='X approximate inductance').value=='Outside model'
+    assert app.warning
+    assert not app.exception

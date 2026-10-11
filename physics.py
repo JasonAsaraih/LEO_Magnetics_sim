@@ -192,3 +192,20 @@ class CubeSat:
             for angle in np.linspace(0, 2*np.pi, 4, endpoint=False):
                 seeds.append(np.asarray(coil.center_m)+coil.radius_m*0.5*(np.cos(angle)*u+np.sin(angle)*v))
         return trace_field_lines(field_function if field_function is not None else lambda p: self.field(p)+external, np.array(seeds), extent, self.side_m/60)
+
+
+def approximate_inductance(coil, bundle_diameter_m):
+    """Thin circular air-core winding estimate, in henries.
+
+    L ≈ μ₀ N² R [ln(8R/a) − 7/4], with a = bundle diameter / 2.
+    Assumes a compact round winding bundle with approximately uniform DC
+    current distribution across its cross-section, a/R ≤ 0.1, no core,
+    and no nearby conductive/magnetic materials. R is the mean turn radius.
+    Bundle diameter describes ALL turns together, not an individual wire.
+    """
+    if not np.isfinite(bundle_diameter_m) or bundle_diameter_m <= 0:
+        raise ValueError('Winding bundle diameter must be finite and positive.')
+    bundle_radius = bundle_diameter_m/2
+    if bundle_radius/coil.radius_m > 0.1:
+        raise ValueError('Thin-bundle estimate requires bundle diameter ≤ 20% of the mean coil radius.')
+    return float(MU0*coil.turns**2*coil.radius_m*(np.log(8*coil.radius_m/bundle_radius)-1.75))

@@ -4,7 +4,7 @@ from pathlib import Path
 import streamlit.components.v1 as components
 import numpy as np
 import streamlit as st
-from physics import Coil, CubeSat, torque
+from physics import Coil, CubeSat, torque, approximate_inductance
 from dynamics import Simulation, quaternion
 from controller import euler_quaternion_degrees, initial_pid_currents
 
@@ -13,8 +13,9 @@ st.title('CubeSat Magnetorquer Lab')
 st.caption('Set initial conditions, then play the magnetorquer attitude simulation.')
 
 
-def load_initial(cube, field, omega, controller=None):
+def load_initial(cube, field, omega, controller=None, bundle_diameters=None):
     st.session_state.simulation = Simulation(cube, field, omega)
+    st.session_state.bundle_diameters_m = bundle_diameters or [0.003, 0.003, 0.003]
     st.session_state.controller_config = controller or {"enabled": False}
     st.session_state.initial_revision = st.session_state.get('initial_revision', 0) + 1
 
@@ -30,11 +31,12 @@ with st.sidebar:
         side_mm = st.number_input('Cube side length (mm)', min_value=20.0, max_value=1000.0, value=100.0, step=10.0)
         mass = st.number_input('Cube mass (kg)', min_value=0.01, max_value=1000.0, value=1.0, step=0.1)
         fill = st.slider('Coil radius (% of cube side)', 10, 49, 40)
-        currents, turns = [], []
+        currents, turns, bundle_diameters = [], [], []
         for label in ('X', 'Y', 'Z'):
             with st.expander(f'{label} coil', expanded=True):
                 currents.append(st.number_input(f'{label} current (A)', min_value=-10.0, max_value=10.0, value=0.1, step=0.01))
                 turns.append(st.number_input(f'{label} turns', min_value=1, max_value=10000, value=100, step=1))
+                bundle_diameters.append(st.number_input(f'{label} winding bundle diameter (mm)', min_value=0.01, max_value=100.0, value=3.0, step=0.1, help='Diameter of the entire round winding cross-section, containing all turns; not the diameter of a single wire. Used only for the inductance estimate.')/1000)
         orientation = st.radio('Initial cube orientation', ['Angles', 'Normal vector'])
         with st.expander('Initial orientation values', expanded=True):
             tilt = st.slider('Body +Z tilt from world +z (°)', 0, 180, 0)
@@ -79,7 +81,9 @@ with st.sidebar:
                               derivativeFilter=derivative_filter)
             if not np.isfinite(target_rates + target_angles + current_limits + [kp,ki,kd,control_period,derivative_filter]).all():
                 raise ValueError('PID settings and targets must be finite.')
-            load_initial(cube, field, np.deg2rad(initial_rates), controller)
+            if not np.isfinite(bundle_diameters).all():
+                raise ValueError('Winding bundle diameters must be finite.')
+            load_initial(cube, field, np.deg2rad(initial_rates), controller, bundle_diameters)
             st.toast('Initial state updated. The simulation is paused at time zero.')
         except ValueError as error:
             st.error(str(error))
@@ -99,12 +103,26 @@ def render_simulation():
     b.metric('Initial net torque', f'{np.linalg.norm(tau)*1e6:.5g} µN·m')
     c.metric('Inertia per axis', f'{cube.inertia[0,0]:.5g} kg·m²')
     d.metric('Initial angular acceleration', f'{np.linalg.norm(alpha):.5g} rad/s²')
+    diameters = st.session_state.get('bundle_diameters_m', [0.003]*3)
+    inductances, inductance_errors = [], []
+    for label, winding, diameter, column in zip(('X','Y','Z'), cube.coils, diameters, st.columns(3)):
+        try:
+            value = approximate_inductance(winding, diameter)
+            inductances.append(value)
+            column.metric(f'{label} approximate inductance', f'{value*1000:.4g} mH')
+        except ValueError as error:
+            inductances.append(None)
+            column.metric(f'{label} approximate inductance', 'Outside model')
+            inductance_errors.append(f'{label}: {error}')
+    if inductance_errors:
+        st.warning(' '.join(inductance_errors))
+    st.caption('Air-core, thin round winding-bundle estimate. Bundle size describes all turns together. Inductance is reported for design review; current commands still use the ideal-current model.')
     visual, calculations = st.tabs(['Field explorer', 'Equations & calculations'])
     with visual:
         config = dict(revision=st.session_state.get('initial_revision', 0), side=cube.side_m, mass=cube.mass_kg, currents=cube.currents_a,
                       turns=cube.turns, radiusFraction=cube.radius_fraction,
                       quaternion=quaternion(cube.rotation).tolist(),
-                      omega=simulation.initial_omega.tolist(), field=earth.tolist(), controller=controller)
+                      omega=simulation.initial_omega.tolist(), field=earth.tolist(), controller=controller, inductanceH=inductances, bundleDiametersM=diameters)
         player = Path(__file__).parent / 'web' / 'dist' / 'player.html'
         if not player.exists():
             st.error('Browser player is missing. Run npm ci && npm run build from this checkout.')
@@ -114,6 +132,13 @@ def render_simulation():
         components.html(html, height=1450 if controller['enabled'] else 1100, scrolling=True)
         st.caption('Live playback runs entirely in your browser. Dragging the camera, changing time scale, and toggling display controls do not trigger Streamlit redraws. Applying new initial conditions reloads the player and resets time. The external field is always included.')
     with calculations:
+        st.subheader('Approximate coil inductance')
+        st.latex(r'L_i\approx\mu_0 N_i^2 R\left[\ln\left(\frac{8R}{a_i}\right)-\frac74\right],\quad a_i=\frac{d_{bundle,i}}2')
+        st.caption('R is the mean turn radius; a is the radius of the entire winding bundle. Assumes a round cross-section with roughly uniform DC current distribution and a/R ≤ 0.1. No ferromagnetic core, mutual coupling between coils, or conductive cube-body effects. Thick, flat, or multilayer rectangular windings require their actual geometry and a different model.')
+        inductance_csv = 'coil,turns,mean_radius_m,bundle_diameter_m,approximate_inductance_H,status\n' + '\n'.join(
+            ','.join([label, str(winding.turns), str(winding.radius_m), str(diameter), '' if value is None else str(value), 'outside_thin_bundle_model' if value is None else 'approximate'])
+            for label, winding, diameter, value in zip(('X','Y','Z'), cube.coils, diameters, inductances))
+        st.download_button('Download inductance estimates (CSV)', data=inductance_csv, file_name='coil-inductance.csv', mime='text/csv', on_click='ignore')
         st.caption('The table below shows applied initial conditions. Live vectors and trajectory data are displayed/exported in the browser player.')
         st.latex(r'R=fL,\quad A=\pi R^2,\quad \mathbf m_i=N_i I_i A\hat{\mathbf n}_i,\quad \mathbf m_{net}=\sum_i\mathbf m_i')
         st.latex(r'\mathbf B_{coils}=\sum_i\mathbf B_i,\quad \boldsymbol\tau=\mathbf m_{net}\times\mathbf B_{external}')

@@ -131,7 +131,7 @@ $('export').onclick=()=>{
 function peakValues(){return current.controller?.peaks||{applied:config.currents.map(Math.abs),required:config.currents.map(Math.abs),appliedDerivative:[0,0,0],requiredDerivative:[0,0,0]};}
 function updateCurrentLog(){
   const peaks=peakValues(),currents=current.currents||config.currents;
-  $('current-log').innerHTML=axes.map((_,i)=>`<tr><td>${['X','Y','Z'][i]}</td><td id="current-${i}">${currents[i].toPrecision(5)}</td><td>${peaks.applied[i].toPrecision(5)}</td><td id="peak-required-${i}">${peaks.required[i].toPrecision(5)}</td><td>${peaks.appliedDerivative[i].toPrecision(5)}</td><td>${peaks.requiredDerivative[i].toPrecision(5)}</td></tr>`).join('');
+  $('current-log').innerHTML=axes.map((_,i)=>`<tr><td>${['X','Y','Z'][i]}</td><td id="current-${i}">${currents[i].toPrecision(5)}</td><td>${!config.inductanceH?'Not configured':config.inductanceH[i]===null?'Outside model':(config.inductanceH[i]*1000).toPrecision(4)}</td><td>${peaks.applied[i].toPrecision(5)}</td><td id="peak-required-${i}">${peaks.required[i].toPrecision(5)}</td><td>${peaks.appliedDerivative[i].toPrecision(5)}</td><td>${peaks.requiredDerivative[i].toPrecision(5)}</td></tr>`).join('');
 }
 $('export-peaks').onclick=()=>{
   const peaks=peakValues();
