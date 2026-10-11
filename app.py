@@ -21,6 +21,7 @@ with st.sidebar:
     total = st.checkbox('Show coil + external field', value=False)
     st.header('Display')
     show_lines = st.checkbox('Show connected field lines', value=True)
+    show_arrows = st.checkbox('Show field arrows', value=True)
     arrow_scale = st.slider('Field arrow size', 0.05, 2.0, 0.35, 0.05, help='Adjusts field arrows only; torque arrow and calculated values stay the same.')
 coil = Coil(current, int(turns), radius/1000, tilt, azimuth)
 earth = np.array([bx,by,bz])*1e-6
@@ -31,7 +32,7 @@ b.metric('Torque magnitude', f'{np.linalg.norm(tau)*1e6:.5g} µN·m')
 c.metric('Coil center field', f'{abs(float(axial_field(coil,0)))*1e6:.5g} µT')
 visual, calculations = st.tabs(['Field explorer', 'Equations & calculations'])
 with visual:
-    st.plotly_chart(scene(coil, earth, total, field_arrow_scale=arrow_scale, show_lines=show_lines), width='stretch')
+    st.plotly_chart(scene(coil, earth, total, field_arrow_scale=arrow_scale, show_lines=show_lines, show_arrows=show_arrows), width='stretch')
     st.caption('Rotate and zoom the 3D view. Connected curves follow the selected magnetic field; line spacing is illustrative, not a measure of strength. Small arrows show field direction; point colors show field magnitude. The teal arrow shows the external magnetic field; the magenta arrow shows torque. Both use normalized lengths, with actual magnitudes in their labels. Points within 2 mm of the ideal wire are omitted.')
     z = np.linspace(-0.3,0.3,301)
     chart = go.Figure(go.Scatter(x=z*1000, y=axial_field(coil,z)*1e6))
