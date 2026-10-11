@@ -13,6 +13,7 @@ st.caption('Set initial conditions, then play the magnetorquer attitude simulati
 
 def load_initial(cube, field, omega):
     st.session_state.simulation = Simulation(cube, field, omega)
+    st.session_state.initial_revision = st.session_state.get('initial_revision', 0) + 1
 
 
 if 'simulation' not in st.session_state:
@@ -20,8 +21,9 @@ if 'simulation' not in st.session_state:
 
 with st.sidebar:
     st.header('Initial conditions')
-    st.caption('Changes take effect when you press Apply initial conditions / Reset. Display and playback controls apply live.')
+    st.caption('Change the values below, then press Update initial state to preview them at time zero. Display and playback controls apply live.')
     with st.form('initial-conditions'):
+        submitted = st.form_submit_button('Update initial state', type='primary', width='stretch')
         side_mm = st.number_input('Cube side length (mm)', min_value=20.0, max_value=1000.0, value=100.0, step=10.0)
         mass = st.number_input('Cube mass (kg)', min_value=0.01, max_value=1000.0, value=1.0, step=0.1)
         fill = st.slider('Coil radius (% of cube side)', 10, 49, 40)
@@ -45,7 +47,6 @@ with st.sidebar:
         bx = st.number_input('Bx (µT)', value=0.0)
         by = st.number_input('By (µT)', value=0.0)
         bz = st.number_input('Bz (µT)', value=40.0)
-        submitted = st.form_submit_button('Apply initial conditions / Reset')
     if submitted:
         try:
             if orientation == 'Normal vector':
@@ -56,6 +57,7 @@ with st.sidebar:
             if not np.isfinite(field).all():
                 raise ValueError('External field must be finite.')
             load_initial(cube, field, np.deg2rad(initial_rates))
+            st.toast('Initial state updated. The simulation is paused at time zero.')
         except ValueError as error:
             st.error(str(error))
 
@@ -73,7 +75,7 @@ def render_simulation():
     d.metric('Initial angular acceleration', f'{np.linalg.norm(alpha):.5g} rad/s²')
     visual, calculations = st.tabs(['Field explorer', 'Equations & calculations'])
     with visual:
-        config = dict(side=cube.side_m, mass=cube.mass_kg, currents=cube.currents_a,
+        config = dict(revision=st.session_state.get('initial_revision', 0), side=cube.side_m, mass=cube.mass_kg, currents=cube.currents_a,
                       turns=cube.turns, radiusFraction=cube.radius_fraction,
                       quaternion=quaternion(cube.rotation).tolist(),
                       omega=simulation.initial_omega.tolist(), field=earth.tolist())

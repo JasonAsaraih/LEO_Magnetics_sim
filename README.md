@@ -27,7 +27,7 @@ This regenerates `web/dist/player.html`. It bundles Three.js and the worker into
 ## Initial conditions and playback
 
 1. Set cube side length, total mass, coil radius, each coil's current/turns, initial orientation, angular velocity, and external field in the sidebar.
-2. Press **Apply initial conditions / Reset**. Form edits alone do not alter the applied model. All coils remain perpendicular; orientation rotates the whole cube. Body +Z normal vectors are normalized; zero is rejected. Angular velocity and external field use world coordinates.
+2. Press **Update initial state**. Form edits alone do not alter the applied model. All coils remain perpendicular; orientation rotates the whole cube. Body +Z normal vectors are normalized; zero is rejected. Angular velocity and external field use world coordinates.
 3. Use **Play**, **Pause**, and **Reset** inside the player. Coil currents stay fixed in the body frame; the external field stays constant in the world frame. Reset returns to the applied initial conditions.
 4. Drag the **Time scale** slider while playing: 10× means 10 simulated seconds per active real second. Simulation time, active real time, angular speed, magnetic moment, and torque update live. Pauses exclude elapsed wall time.
 
