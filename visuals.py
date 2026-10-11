@@ -1,16 +1,15 @@
 """Plot construction only: consumes SI-unit model outputs."""
+from functools import lru_cache
 import numpy as np
 import plotly.graph_objects as go
-from physics import coil_field, torque, field_lines
+from physics import torque
 
 
-def scene(coil, earth_t, show_total=False, field_arrow_scale=0.35, show_lines=True, show_arrows=True):
+def scene(coil, earth_t, field_arrow_scale=0.35, show_lines=True, show_arrows=True, vector_scale=1.0):
     extent = coil.side_m*2
     axis = np.linspace(-extent, extent, 9)
     points = np.stack(np.meshgrid(axis, axis, axis, indexing='ij'), axis=-1).reshape(-1, 3)
-    field = coil.field(points)
-    if show_total:
-        field = field + earth_t
+    field = coil.field(points) + np.asarray(earth_t)
     magnitude = np.linalg.norm(field, axis=1)
     valid = np.isfinite(magnitude) & (magnitude > 0)
     p, b, strength = points[valid], field[valid], magnitude[valid]
@@ -23,7 +22,7 @@ def scene(coil, earth_t, show_total=False, field_arrow_scale=0.35, show_lines=Tr
         fig.add_trace(go.Cone(x=p[:,0], y=p[:,1], z=p[:,2], u=arrows[:,0], v=arrows[:,1], w=arrows[:,2], sizemode='raw', sizeref=1, anchor='tail', showscale=False, colorscale='Blues', name='Field direction', hoverinfo='skip'))
         fig.add_trace(go.Scatter3d(x=p[:,0], y=p[:,1], z=p[:,2], mode='markers', marker=dict(size=2, color=strength*1e6, colorscale='Viridis', colorbar=dict(title='|B| µT')), customdata=strength*1e6, hovertemplate='|B|=%{customdata:.3g} µT<extra></extra>', name='Field magnitude'))
     if show_lines:
-        paths = coil.field_lines(earth_t if show_total else None, extent=extent)
+        paths = cached_field_lines(coil, tuple(earth_t), extent)
         # None separators keep independently integrated paths disconnected.
         coordinates = [[], [], []]
         for path in paths:
@@ -42,32 +41,39 @@ def scene(coil, earth_t, show_total=False, field_arrow_scale=0.35, show_lines=Tr
     for label, color, winding in zip(('X','Y','Z'), ('#ef8b2c','#4caf70','#8168ed'), coil.coils):
         wire = winding.wire()
         fig.add_trace(go.Scatter3d(x=wire[:,0], y=wire[:,1], z=wire[:,2], mode='lines', line=dict(color=color, width=8), name=f'{label} coil'))
-        start = np.asarray(winding.center_m)
-        tip = start+winding.basis[2]*coil.side_m*0.3
-        fig.add_trace(go.Scatter3d(x=[start[0],tip[0]], y=[start[1],tip[1]], z=[start[2],tip[2]], mode='lines+text', text=['',f'+{label}'], textfont=dict(color=color), line=dict(color=color,width=4), showlegend=False, hoverinfo='skip'))
-    external = np.asarray(earth_t, dtype=float)
-    external_magnitude = np.linalg.norm(external)
-    if external_magnitude > 0:
-        tip = external/external_magnitude*extent*0.9
-        color = '#00a6a6'
-        label = f'B external = {external_magnitude*1e6:.3g} µT'
-        fig.add_trace(go.Scatter3d(x=[0,tip[0]], y=[0,tip[1]], z=[0,tip[2]], mode='lines+text', text=['',label], textposition='top center', textfont=dict(color=color, size=16), line=dict(color=color, width=8), name='External magnetic field', hovertemplate=label+'<extra>External field direction</extra>'))
-        head = tip*0.18
-        fig.add_trace(go.Cone(x=[tip[0]], y=[tip[1]], z=[tip[2]], u=[head[0]], v=[head[1]], w=[head[2]], anchor='tip', sizemode='raw', sizeref=1, colorscale=[[0,color],[1,color]], showscale=False, showlegend=False, hoverinfo='skip'))
-    else:
-        fig.add_annotation(text='B external = 0 · no field direction', x=0.02, y=0.91, xref='paper', yref='paper', showarrow=False, font=dict(color='#00a6a6', size=16))
+        add_vector(fig, winding.center_m, winding.moment, extent*0.6/0.1*vector_scale,
+                   f'm {label}', color, 'A·m²')
+    add_vector(fig, (0,0,0), coil.moment, extent*0.6/0.1*vector_scale,
+               'm net', '#d3a300', 'A·m²', width=10)
+    add_vector(fig, (0,0,0), np.asarray(earth_t), extent*0.6/40e-6*vector_scale,
+               'B external', '#00a6a6', 'µT', unit_factor=1e6)
     tau = torque(coil, earth_t)
-    tau_magnitude = np.linalg.norm(tau)
-    # Suppress roundoff torque for parallel vectors; normalize only for display.
-    torque_scale = np.linalg.norm(coil.moment)*np.linalg.norm(earth_t)
-    if tau_magnitude > torque_scale*1e-12:
-        tip = tau/tau_magnitude*extent*0.85
-        color = '#d528b8'
-        label = f'τ = {tau_magnitude*1e6:.3g} µN·m'
-        fig.add_trace(go.Scatter3d(x=[0,tip[0]], y=[0,tip[1]], z=[0,tip[2]], mode='lines+text', text=['',label], textposition='top center', textfont=dict(color=color, size=16), line=dict(color=color, width=10), name='Torque τ', hovertemplate=label+'<extra>Torque direction</extra>'))
-        head = tip*0.22
-        fig.add_trace(go.Cone(x=[tip[0]], y=[tip[1]], z=[tip[2]], u=[head[0]], v=[head[1]], w=[head[2]], anchor='tip', sizemode='raw', sizeref=1, colorscale=[[0,color],[1,color]], showscale=False, showlegend=False, hoverinfo='skip'))
-    else:
-        fig.add_annotation(text='τ = 0 · no torque direction', x=0.02, y=0.98, xref='paper', yref='paper', showarrow=False, font=dict(color='#d528b8', size=16))
+    if np.linalg.norm(tau) <= np.linalg.norm(coil.moment)*np.linalg.norm(earth_t)*1e-12:
+        tau = np.zeros(3)
+    add_vector(fig, (0,0,0), tau, extent*0.6/4e-6*vector_scale,
+               'Torque τ', '#d528b8', 'µN·m', unit_factor=1e6, width=10)
     fig.update_layout(height=580, margin=dict(l=0,r=0,t=0,b=0), scene=dict(aspectmode='cube', xaxis_title='x (m)', yaxis_title='y (m)', zaxis_title='z (m)', xaxis=dict(range=[-extent,extent]), yaxis=dict(range=[-extent,extent]), zaxis=dict(range=[-extent,extent])), legend=dict(orientation='h'))
     return fig
+
+
+
+def add_vector(fig, origin, vector, gain, name, color, unit, unit_factor=1, width=8):
+    """Display displacement = gain * physical vector, with no normalization.
+
+    Gains are fixed per quantity type so doubling magnitude doubles length.
+    Each magnetic moment uses the same gain for direct comparison.
+    """
+    origin, vector = np.asarray(origin), np.asarray(vector)
+    magnitude = np.linalg.norm(vector)
+    label = f'{name} = {magnitude*unit_factor:.3g} {unit}'
+    tip = origin+gain*vector
+    fig.add_trace(go.Scatter3d(x=[origin[0],tip[0]], y=[origin[1],tip[1]], z=[origin[2],tip[2]], mode='lines+text', text=['',label], textposition='top center', textfont=dict(color=color,size=14), line=dict(color=color,width=width), name=name, hovertemplate=label+'<extra></extra>'))
+    if magnitude > 0:
+        head = gain*vector*0.18
+        fig.add_trace(go.Cone(x=[tip[0]], y=[tip[1]], z=[tip[2]], u=[head[0]], v=[head[1]], w=[head[2]], anchor='tip', sizemode='raw', sizeref=1, colorscale=[[0,color],[1,color]], showscale=False, showlegend=False, hoverinfo='skip'))
+
+
+@lru_cache(maxsize=8)
+def cached_field_lines(cube, external_field, extent):
+    """Reuse expensive traces when only display controls change."""
+    return cube.field_lines(external_field, extent=extent)

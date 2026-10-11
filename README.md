@@ -24,7 +24,7 @@ Streamlit normally listens on port 8501. Run locally or use your development pla
 - Toggle field lines and field arrows independently. Hiding arrows also hides magnitude dots and the color scale. Arrow size controls actual raw Plotly cone lengths.
 - Net magnetic moment is the vector sum of NIπR² times each coil normal. Torque is m_net × B_external. Angular acceleration is J⁻¹τ. Mass changes inertia/acceleration, not magnetic moment.
 
-The external field vector is teal; net torque is magenta. Their displayed lengths are normalized and labels show actual magnitudes. Coils are orange (X), green (Y), and violet (Z). A current sweep shows net torque versus X-coil current while Y/Z remain fixed. Equations, per-coil and combined vectors, body axes, and CSV export appear in the calculations tab.
+The external field vector is teal; net torque is magenta. All moment, torque, and external-field vector lengths scale linearly with magnitude. Coil-colored arrows show individual moments and a gold arrow shows the net moment. All moment vectors share a common scale. Separate scales apply to unlike units: 0.1 A·m², 40 µT, or 4 µN·m each span 60% of the field-view half-width at vector scale 1. Use the vector scale slider to shrink large vectors that extend beyond the view; zero vectors have zero length and a zero label. Coils are orange (X), green (Y), and violet (Z). A current sweep shows net torque versus X-coil current while Y/Z remain fixed. Equations, per-coil and combined vectors, body axes, and CSV export appear in the calculations tab.
 
 ## Code and validation
 
@@ -37,6 +37,6 @@ The external field vector is teal; net torque is magenta. Their displayed length
 /workspace/leo-magnetics-env/venv/bin/python -m pytest -q
 ```
 
-Fields use 240 segments per circular winding. Field lines integrate dr/ds = B/|B| using midpoint integration in both directions from coil-plane seeds. They trace the combined coil field plus the external field when selected. Traces stop at the display boundary, near energized wires, at a field null, when returning to a seed, or after 360 steps per direction. Seed spacing is illustrative, not flux density. Points within 2 mm of energized ideal wires are omitted.
+Fields use 240 segments per circular winding. Field lines integrate dr/ds = B/|B| using midpoint integration in both directions from 48 coil-plane seeds (16 per coil). They trace the combined coil field plus the external field at all times (there is no coil-only display toggle). Traces stop at the display boundary, near energized wires, at a field null, when returning to a seed, or after 360 steps per direction. Seed spacing is illustrative, not flux density. Points within 2 mm of energized ideal wires are omitted.
 
 Assumptions: uniform solid cube mass distribution, coincident circular turns, vacuum permeability, and a uniform external field. No core saturation, heating, resistance, orbital model, or time integration of attitude. Coils' own fields do not provide net external torque. Magnetorquers cannot produce torque along the external field. This is an instantaneous engineering calculator, not a flight qualification model.

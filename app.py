@@ -37,11 +37,12 @@ with st.sidebar:
     bx = st.number_input('Bx (µT)', value=0.0)
     by = st.number_input('By (µT)', value=0.0)
     bz = st.number_input('Bz (µT)', value=40.0)
-    total = st.checkbox('Show coil + external field', value=False)
+    st.caption('The displayed field always includes all coils + external field.')
     st.header('Display')
     show_lines = st.checkbox('Show connected field lines', value=True)
     show_arrows = st.checkbox('Show field arrows', value=True, help='Shows or hides both field arrows and colored magnitude dots.')
     arrow_scale = st.slider('Field arrow size', 0.05, 2.0, 0.35, 0.05)
+    vector_scale = st.slider('Moment / torque / external vector scale', 0.01, 2.0, 1.0, 0.01, help='All large vector lengths remain proportional to magnitude. Reduce this scale if a vector extends beyond the view.')
 cube = CubeSat(side_mm/1000, mass, tuple(currents), tuple(turns), fill/100, tilt, azimuth)
 earth = np.array([bx,by,bz])*1e-6
 tau = torque(cube, earth)
@@ -53,8 +54,8 @@ c.metric('Inertia per axis', f'{cube.inertia[0,0]:.5g} kg·m²')
 d.metric('Angular acceleration', f'{np.linalg.norm(alpha):.5g} rad/s²')
 visual, calculations = st.tabs(['Field explorer', 'Equations & calculations'])
 with visual:
-    st.plotly_chart(scene(cube, earth, total, field_arrow_scale=arrow_scale, show_lines=show_lines, show_arrows=show_arrows), width='stretch')
-    st.caption('Orange: X coil · Green: Y coil · Violet: Z coil. Curves follow the combined field of all three coils, plus the external field when selected. Line spacing is illustrative. Small arrows show direction; dots show magnitude. Teal: external field · Magenta: net torque. Large vector lengths are normalized; labels give actual magnitudes. Field traces exclude points within 2 mm of energized wires.')
+    st.plotly_chart(scene(cube, earth, field_arrow_scale=arrow_scale, show_lines=show_lines, show_arrows=show_arrows, vector_scale=vector_scale), width='stretch')
+    st.caption('Orange: X coil · Green: Y coil · Violet: Z coil. Curves follow the combined field of all three coils, plus the external field. Line spacing is illustrative. Small arrows show direction; dots show magnitude. Coil-colored vectors: individual magnetic moments · Gold: net magnetic moment · Teal: external field · Magenta: net torque. Vector lengths scale linearly with magnitude, using separate scales for different units; labels give actual values. Reduce the vector scale if a tip extends beyond the view. Field traces exclude points within 2 mm of energized wires.')
     angles = np.linspace(-10,10,201)
     # A useful current sweep keeps the remaining two coils at their selected values.
     moments = np.array([Coil.from_normal(value,cube.turns[0],cube.side_m*cube.radius_fraction,cube.rotation[:,0]).moment+sum((c.moment for c in cube.coils[1:]),start=np.zeros(3)) for value in angles])
@@ -69,6 +70,7 @@ with calculations:
     vectors = [(f'{label} coil moment (A·m²)', c.moment) for label,c in zip(('X','Y','Z'),cube.coils)]
     vectors += [('Net moment (A·m²)',cube.moment),('External B (T)',earth),('Net torque (N·m)',tau),('Angular acceleration (rad/s²)',alpha)]
     st.dataframe({'Quantity':[name for name,_ in vectors],**{axis:[v[i] for _,v in vectors] for i,axis in enumerate(('x','y','z'))}},hide_index=True)
+    st.caption('At vector scale 1, a vector spans 60% of the field-view half-width for 0.1 A·m², 40 µT, or 4 µN·m. All moment vectors share one scale; unlike units cannot be compared by length.')
     st.write('Body axes expressed in world coordinates (columns X, Y, Z):')
     st.dataframe(cube.rotation)
     st.write(f'Each coil radius: {cube.side_m*cube.radius_fraction*1000:.3g} mm. Face centers: +L/2 along each positive body axis. Inertia is about the cube center of mass.')
