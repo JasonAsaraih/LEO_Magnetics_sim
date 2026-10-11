@@ -12,8 +12,22 @@ with st.sidebar:
     current = st.slider('Current (A)', -2.0, 2.0, 0.1, 0.01)
     turns = st.number_input('Number of turns', 1, 10000, 100)
     radius = st.slider('Coil radius (mm)', 5.0, 100.0, 40.0, 1.0)
-    tilt = st.slider('Normal tilt from +z (°)', 0, 180, 45)
-    azimuth = st.slider('Normal azimuth from +x toward +y (°)', -180, 180, 0)
+    orientation = st.radio('Coil orientation', ['Angles', 'Normal vector'])
+    if orientation == 'Angles':
+        tilt = st.slider('Normal tilt from +z (°)', 0, 180, 45)
+        azimuth = st.slider('Normal azimuth from +x toward +y (°)', -180, 180, 0)
+        coil = Coil(current, int(turns), radius/1000, tilt, azimuth)
+    else:
+        nx = st.number_input('Coil normal x', value=1.0, step=0.1)
+        ny = st.number_input('Coil normal y', value=0.0, step=0.1)
+        nz = st.number_input('Coil normal z', value=1.0, step=0.1)
+        st.caption('The normal is perpendicular to the coil plane. Only its direction matters; components are normalized automatically.')
+        try:
+            coil = Coil.from_normal(current, int(turns), radius/1000, [nx, ny, nz])
+        except ValueError as error:
+            st.error(str(error))
+            st.stop()
+        st.caption(f'Tilt: {coil.tilt_deg:.2f}° · Azimuth: {coil.azimuth_deg:.2f}°')
     st.header('External field')
     bx = st.number_input('Bx (µT)', value=0.0)
     by = st.number_input('By (µT)', value=0.0)
@@ -21,9 +35,8 @@ with st.sidebar:
     total = st.checkbox('Show coil + external field', value=False)
     st.header('Display')
     show_lines = st.checkbox('Show connected field lines', value=True)
-    show_arrows = st.checkbox('Show field arrows', value=True)
+    show_arrows = st.checkbox('Show field arrows', value=True, help='Shows or hides both field arrows and colored magnitude dots.')
     arrow_scale = st.slider('Field arrow size', 0.05, 2.0, 0.35, 0.05, help='Adjusts field arrows only; torque arrow and calculated values stay the same.')
-coil = Coil(current, int(turns), radius/1000, tilt, azimuth)
 earth = np.array([bx,by,bz])*1e-6
 tau = torque(coil, earth)
 a,b,c = st.columns(3)

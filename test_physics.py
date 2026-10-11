@@ -47,3 +47,16 @@ def test_field_lines_zero_and_uniform_fields():
     for path in paths:
         np.testing.assert_allclose(path[:,:2], np.broadcast_to(path[0,:2], path[:,:2].shape))
         assert (np.diff(path[:,2]) > 0).all()
+
+
+def test_normal_vector_orientation():
+    import pytest
+    for normal in ([1, 2, -3], [0, 0, -1], [0, 1, 0], [1e300, 0, 1e300]):
+        coil = Coil.from_normal(0.1, 100, 0.04, normal)
+        unit = np.array(normal, dtype=float)/max(abs(v) for v in normal)
+        unit /= np.linalg.norm(unit)
+        np.testing.assert_allclose(coil.basis[2], unit, atol=1e-15)
+        np.testing.assert_allclose(coil.wire()@unit, 0, atol=1e-15)
+    for normal in ([0, 0, 0], [float('nan'), 0, 1]):
+        with pytest.raises(ValueError):
+            Coil.from_normal(0.1, 100, 0.04, normal)

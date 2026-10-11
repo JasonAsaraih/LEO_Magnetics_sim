@@ -16,6 +16,19 @@ class Coil:
         if self.radius_m <= 0 or self.turns < 1:
             raise ValueError('Radius must be positive and turns must be at least one.')
 
+    @classmethod
+    def from_normal(cls, current_a, turns, radius_m, normal):
+        """Orient the coil from any finite, nonzero normal vector (x, y, z)."""
+        normal = np.asarray(normal, dtype=float)
+        if normal.shape != (3,) or not np.isfinite(normal).all() or not np.any(normal):
+            raise ValueError('Coil normal must be a finite, nonzero x/y/z vector.')
+        # Scale before normalizing to avoid overflow for large components.
+        unit = normal / np.max(np.abs(normal))
+        unit /= np.linalg.norm(unit)
+        tilt = np.rad2deg(np.arccos(np.clip(unit[2], -1, 1)))
+        azimuth = np.rad2deg(np.arctan2(unit[1], unit[0]))
+        return cls(current_a, turns, radius_m, float(tilt), float(azimuth))
+
     @property
     def basis(self):
         theta, phi = np.deg2rad([self.tilt_deg, self.azimuth_deg])

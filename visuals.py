@@ -21,7 +21,7 @@ def scene(coil, earth_t, show_total=False, field_arrow_scale=0.35, show_lines=Tr
     fig = go.Figure()
     if show_arrows:
         fig.add_trace(go.Cone(x=p[:,0], y=p[:,1], z=p[:,2], u=arrows[:,0], v=arrows[:,1], w=arrows[:,2], sizemode='raw', sizeref=1, anchor='tail', showscale=False, colorscale='Blues', name='Field direction', hoverinfo='skip'))
-    fig.add_trace(go.Scatter3d(x=p[:,0], y=p[:,1], z=p[:,2], mode='markers', marker=dict(size=2, color=strength*1e6, colorscale='Viridis', colorbar=dict(title='|B| µT')), customdata=strength*1e6, hovertemplate='|B|=%{customdata:.3g} µT<extra></extra>', name='Field magnitude'))
+        fig.add_trace(go.Scatter3d(x=p[:,0], y=p[:,1], z=p[:,2], mode='markers', marker=dict(size=2, color=strength*1e6, colorscale='Viridis', colorbar=dict(title='|B| µT')), customdata=strength*1e6, hovertemplate='|B|=%{customdata:.3g} µT<extra></extra>', name='Field magnitude'))
     if show_lines:
         paths = field_lines(coil, earth_t if show_total else None, extent=extent)
         # None separators keep independently integrated paths disconnected.
