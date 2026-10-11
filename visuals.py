@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from physics import torque
 
 
-def scene(coil, earth_t, field_arrow_scale=0.35, show_lines=True, show_arrows=True, vector_scale=1.0):
+def scene(coil, earth_t, field_arrow_scale=0.35, show_lines=True, show_arrows=True, vector_scale=1.0, live=False):
     extent = coil.side_m*2
     axis = np.linspace(-extent, extent, 9)
     points = np.stack(np.meshgrid(axis, axis, axis, indexing='ij'), axis=-1).reshape(-1, 3)
@@ -22,7 +22,7 @@ def scene(coil, earth_t, field_arrow_scale=0.35, show_lines=True, show_arrows=Tr
         fig.add_trace(go.Cone(x=p[:,0], y=p[:,1], z=p[:,2], u=arrows[:,0], v=arrows[:,1], w=arrows[:,2], sizemode='raw', sizeref=1, anchor='tail', showscale=False, colorscale='Blues', name='Field direction', hoverinfo='skip'))
         fig.add_trace(go.Scatter3d(x=p[:,0], y=p[:,1], z=p[:,2], mode='markers', marker=dict(size=2, color=strength*1e6, colorscale='Viridis', colorbar=dict(title='|B| µT')), customdata=strength*1e6, hovertemplate='|B|=%{customdata:.3g} µT<extra></extra>', name='Field magnitude'))
     if show_lines:
-        paths = cached_field_lines(coil, tuple(earth_t), extent)
+        paths = coil.field_lines(earth_t, extent=extent, field_function=grid_interpolator(field.reshape(9,9,9,3), extent)) if live else cached_field_lines(coil, tuple(earth_t), extent)
         # None separators keep independently integrated paths disconnected.
         coordinates = [[], [], []]
         for path in paths:
@@ -52,7 +52,7 @@ def scene(coil, earth_t, field_arrow_scale=0.35, show_lines=True, show_arrows=Tr
         tau = np.zeros(3)
     add_vector(fig, (0,0,0), tau, extent*0.6/4e-6*vector_scale,
                'Torque τ', '#d528b8', 'µN·m', unit_factor=1e6, width=10)
-    fig.update_layout(height=580, margin=dict(l=0,r=0,t=0,b=0), scene=dict(aspectmode='cube', xaxis_title='x (m)', yaxis_title='y (m)', zaxis_title='z (m)', xaxis=dict(range=[-extent,extent]), yaxis=dict(range=[-extent,extent]), zaxis=dict(range=[-extent,extent])), legend=dict(orientation='h'))
+    fig.update_layout(uirevision='attitude-view', height=580, margin=dict(l=0,r=0,t=0,b=0), scene=dict(aspectmode='cube', xaxis_title='x (m)', yaxis_title='y (m)', zaxis_title='z (m)', xaxis=dict(range=[-extent,extent]), yaxis=dict(range=[-extent,extent]), zaxis=dict(range=[-extent,extent])), legend=dict(orientation='h'))
     return fig
 
 
@@ -77,3 +77,26 @@ def add_vector(fig, origin, vector, gain, name, color, unit, unit_factor=1, widt
 def cached_field_lines(cube, external_field, extent):
     """Reuse expensive traces when only display controls change."""
     return cube.field_lines(external_field, extent=extent)
+
+
+
+def grid_interpolator(field, extent):
+    """Trilinear field sampling for responsive live traces (display only)."""
+    def sample(points):
+        coordinates=(np.asarray(points)+extent)/(2*extent)*(field.shape[0]-1)
+        inside=((coordinates>=0)&(coordinates<=field.shape[0]-1)).all(axis=1)
+        coordinates=np.clip(coordinates,0,field.shape[0]-1)
+        base=np.minimum(np.floor(coordinates).astype(int),field.shape[0]-2)
+        fraction=coordinates-base
+        result=np.zeros((len(points),3))
+        for x in (0,1):
+            for y in (0,1):
+                for z in (0,1):
+                    offsets=np.array([x,y,z])
+                    index=base+offsets
+                    weights=np.prod(np.where(offsets,fraction,1-fraction),axis=1)
+                    values=field[index[:,0],index[:,1],index[:,2]]
+                    result+=values*weights[:,None]
+        result[~inside]=np.nan
+        return result
+    return sample

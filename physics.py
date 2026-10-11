@@ -141,6 +141,7 @@ class CubeSat:
     radius_fraction: float = 0.4
     tilt_deg: float = 0
     azimuth_deg: float = 0
+    attitude: tuple | None = None
 
     def __post_init__(self):
         if not np.isfinite([self.side_m, self.mass_kg, self.radius_fraction]).all() or self.side_m <= 0 or self.mass_kg <= 0:
@@ -152,6 +153,8 @@ class CubeSat:
 
     @property
     def rotation(self):
+        if self.attitude is not None:
+            return np.array(self.attitude).reshape(3,3)
         return np.column_stack(Coil(tilt_deg=self.tilt_deg, azimuth_deg=self.azimuth_deg).basis)
 
     @property
@@ -180,7 +183,7 @@ class CubeSat:
     def angular_acceleration(self, external_field_t):
         return np.linalg.solve(self.inertia, torque(self, external_field_t))
 
-    def field_lines(self, external_field_t=None, extent=None):
+    def field_lines(self, external_field_t=None, extent=None, field_function=None):
         extent = self.side_m*2 if extent is None else extent
         external = np.zeros(3) if external_field_t is None else np.asarray(external_field_t)
         seeds = []
@@ -188,4 +191,4 @@ class CubeSat:
             u, v, _ = coil.basis
             for angle in np.linspace(0, 2*np.pi, 4, endpoint=False):
                 seeds.append(np.asarray(coil.center_m)+coil.radius_m*0.5*(np.cos(angle)*u+np.sin(angle)*v))
-        return trace_field_lines(lambda p: self.field(p)+external, np.array(seeds), extent, self.side_m/60)
+        return trace_field_lines(field_function if field_function is not None else lambda p: self.field(p)+external, np.array(seeds), extent, self.side_m/60)

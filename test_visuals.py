@@ -30,3 +30,13 @@ def test_external_field_always_included_and_zero_moment():
     assert (np.array(arrows.w) > 0).all()
     np.testing.assert_allclose(displacement(fig,'m net'), 0)
     np.testing.assert_allclose(displacement(fig,'Torque τ'), 0)
+
+
+def test_live_grid_interpolation_preserves_linear_vector_fields():
+    from visuals import grid_interpolator
+    axis=np.linspace(-1,1,9)
+    grid=np.stack(np.meshgrid(axis,axis,axis,indexing='ij'),axis=-1)
+    field=grid*np.array([2,3,4])+np.array([1,2,3])
+    points=np.array([[.15,.37,-.21],[-1,0,1]])
+    np.testing.assert_allclose(grid_interpolator(field,1)(points),points*np.array([2,3,4])+np.array([1,2,3]))
+    assert np.isnan(grid_interpolator(field,1)([[2,0,0]])).all()
